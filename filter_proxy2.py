@@ -29,7 +29,7 @@ class Filter:
                     blocked_data = json.load(file)  # Cargar la lista de diccionarios
                     # Procesar cada entrada del JSON y guardar la URL junto con otros parámetros
                     self.blocked_sites = [
-                        {"url": item["url"], "category": item.get("category"), "reason": item.get("reason")}
+                        {"url": item["url"], "category": item.get("category"), "ipUser": item.get("ipUser"), "reason": item.get("reason")}
                         for item in blocked_data
                     ]
                     logging.info(f"Loaded blocked sites: {self.blocked_sites}")
@@ -62,14 +62,19 @@ class Filter:
 
 # respuesta HTTP
     def request(self, flow: http.HTTPFlow) -> None:
+        client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
+        #obtener las reglas para este cliente:
         for site in self.blocked_sites:
-            if site["url"] in flow.request.pretty_url:
+            # Verificar si la IP de la regla coincide con la IP del cliente o si es 'None' (regla global)
+            if site["url"] in flow.request.pretty_url and (site["ipUser"] is None or site["ipUser"] == client_ip):
+                logging.info(f"Blocking request from {client_ip}: {flow.request.pretty_url}")
                 flow.response = http.Response.make(
                     403,  # (optional) status code
                     b"Access to this site is blocked by the proxy.",  # (optional) content
                     {"Content-Type": "text/html"},  # (optional) headers
                 )
                 flow.metadata["blocked"] = True  # Usar una propiedad personalizada para marcar la solicitud como bloqueada
+                print(f"Blocked access to {site['url']} for IP {client_ip} (Reason: {site.get('reason')})")
                 return  # Detener el flujo aquí si se bloquea la solicitud
         
         
