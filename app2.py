@@ -22,6 +22,11 @@ CREATE TABLE rules_by_role (
     blocked_website_id INT,
     FOREIGN KEY (blocked_website_id) REFERENCES blocked_websites(id)
 );
+
+CREATE TABLE malicious_keywords (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    keyword VARCHAR(255) NOT NULL
+);
 """
 
 import subprocess
@@ -140,3 +145,26 @@ def apply_rules():
     finally:
         cursor.close()
         conn.close()
+
+
+@app.route('/add_keyword', methods=['POST'])
+def add_keyword():
+    data = request.json
+    keyword = data.get('keyword')
+
+    if not keyword:
+        return jsonify({"error": "Falta la palabra clave"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("INSERT INTO malicious_keywords (keyword) VALUES (%s)", (keyword,))
+        conn.commit()
+        return jsonify({"message": "Palabra clave añadida correctamente"}), 201
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
