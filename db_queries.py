@@ -16,7 +16,7 @@ class DatabaseQueries:
 
         # Consultar las reglas de bloqueo por IP
         query = """
-        SELECT bw.url, bw.category, bw.reason
+        SELECT bw.url, bw.type, bw.reason
         FROM rules_by_ip rip
         JOIN blocked_websites bw ON rip.blocked_website_id = bw.id
         WHERE rip.userIP = %s
@@ -29,7 +29,7 @@ class DatabaseQueries:
 
         # Consultar las reglas de bloqueo por rol
         query = """
-        SELECT bw.url, bw.category, bw.reason
+        SELECT bw.url, bw.type, bw.reason
         FROM rules_by_role rbr
         JOIN blocked_websites bw ON rbr.blocked_website_id = bw.id
         WHERE rbr.role = %s
@@ -41,9 +41,13 @@ class DatabaseQueries:
         cursor = self.db_connection.cursor(dictionary=True)
 
         # Consultar el rol del usuario
-        query = "SELECT role FROM users WHERE userIP = %s"
+        query = "SELECT role FROM users WHERE ip_address = %s"
         cursor.execute(query, (userIP,))
-        return cursor.fetchone()
+        result = cursor.fetchone()
+        if result:
+            return result['role']
+        else:
+            return None  # Devolver None si no se encuentra ningún rol
 
     def get_authorized_sites(self):
         cursor = self.db_connection.cursor(dictionary=True)

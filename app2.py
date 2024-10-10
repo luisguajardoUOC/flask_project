@@ -47,20 +47,29 @@ CREATE TABLE history (
 """
 
 import subprocess
+import threading
 import os
 import signal
 import json
 import logging
 import mysql.connector
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from db import get_db_connection #importar a función rchivo db.py
 
 app = Flask(__name__)
+CORS(app)
 # Configuración del logging
-logging.basicConfig(level=logging.DEBUG) 
-# Para asegurar que Flask loguee en la consola
-app.logger.setLevel(logging.DEBUG)
 
+logging.basicConfig(level=logging.INFO) 
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+# Para asegurar que Flask loguee en la consola
+
+proxy_process = None 
+def stream_process_output(process):
+    """Captura la salida de stdout y stderr en tiempo real y la imprime."""
+    for line in process.stdout:
+        print(line.strip())
 # Ruta para iniciar el proxy
 @app.route('/start_proxy', methods=['GET'])
 def start_proxy():
@@ -79,9 +88,12 @@ def start_proxy():
             stderr=subprocess.PIPE,
             universal_newlines=True
         )
-        for stdout_line in iter(proxy_process.stdout.readline, ""):
-                print(stdout_line.strip())
-        proxy_process.stdout.close()
+        # Crear un hilo para capturar la salida de mitmdump en tiempo real
+        threading.Thread(target=stream_process_output, args=(proxy_process,), daemon=True).start()
+
+        #for stdout_line in iter(proxy_process.stdout.readline, ""):
+        #        print(stdout_line.strip())
+        # proxy_process.stdout.close()
         # Leer la salida completa del proxy cuando termine       
 
         return jsonify({"message": "Proxy started successfully"}), 200
@@ -166,6 +178,31 @@ def add_user():
         cursor.close()
         conn.close()
 
+@app.route('/get_users', methods=['GET'])
+def get_users():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM users")
+        users = cursor.fetchall()
+         # Estructurar el resultado como una lista de diccionarios
+        users_list = []
+        for user in users:
+            users_list.append({
+                "id": user[0],
+                "name": user[1],
+                "role": user[2],
+                "ip_usuario": user[3],
+                "timeStamp": user[4]
+            })
+        return jsonify(users_list), 200
+    
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 @app.route('/add_rule', methods=['POST'])
 def add_rule():
@@ -193,8 +230,23 @@ def add_rule():
             conn.commit()
             blocked_website_id = cursor.lastrowid
 
-        # Paso 2: Insertar la regla en la tabla correspondiente
+        # Paso 2: Si userIP se ha proporcionado, verificar si ya existe una regla con el mismo rol
         if userIP:
+            # Obtener el rol del usuario basado en su IP
+            cursor.execute("SELECT role FROM users WHERE ip_address = %s", (userIP,))
+            user_role = cursor.fetchone()
+            if user_role:
+                role = user_role[0]
+                cursor.execute("""
+                               SELECT 1 
+                    FROM rules_by_role rbr 
+                    JOIN blocked_websites bw ON rbr.blocked_website_id = bw.id 
+                    WHERE rbr.role = %s AND bw.url = %s AND rbr.action = %s""", (role, url, action))
+                existing_rule = cursor.fetchone()
+
+                if existing_rule:
+                    return jsonify({"message": "La regla ya existe"}), 400
+         
             # Insertar en rules_by_ip
             cursor.execute("INSERT INTO rules_by_ip (action, userIP, blocked_website_id) VALUES (%s, %s, %s)", 
                            (action, userIP, blocked_website_id))
@@ -208,6 +260,11 @@ def add_rule():
     except mysql.connector.Error as err:
         return jsonify({"error": str(err)}), 500
     finally:
+        try:
+            if cursor:
+                cursor.fetchall()  # Consumir cualquier resultado pendiente
+        except mysql.connector.errors.InterfaceError:
+            pass  # No hay más resultados, continuar
         cursor.close()
         conn.close()
 
@@ -314,6 +371,107 @@ def edit_rule():
             cursor.close()
         if conn:
             conn.close()
+
+
+@app.route('/list_rules', methods=['GET'])
+def list_rules():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Consulta para obtener reglas por IP y por Rol
+        query = """
+            SELECT
+                bw.url AS URL,
+                bw.type AS Categoria,
+                rbr.action AS Accion,
+                NULL AS 'IP del Usuario',  -- No se usa IP en reglas por rol
+                rbr.role AS 'Rol del Usuario'
+            FROM
+                rules_by_role rbr
+            JOIN
+                blocked_websites bw ON rbr.blocked_website_id = bw.id
+
+            UNION
+
+            SELECT
+                bw.url AS URL,
+                bw.type AS Categoria,
+                rip.action AS Accion,
+                rip.userIP AS 'IP del Usuario',
+                u.role AS 'Rol del Usuario'
+            FROM
+                rules_by_ip rip
+            JOIN
+                blocked_websites bw ON rip.blocked_website_id = bw.id
+            LEFT JOIN
+                users u ON rip.userIP = u.ip_address            
+        """
+
+        cursor.execute(query)
+        rules = cursor.fetchall()
+
+        # Estructurar el resultado como una lista de diccionarios
+        rules_list = []
+        for rule in rules:
+            rules_list.append({
+                "url": rule[0],
+                "categoria": rule[1],
+                "accion": rule[2],
+                "ip_usuario": rule[3],
+                "rol_usuario": rule[4]
+            })
+
+        return jsonify({"rules": rules_list}), 200
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+''' data = request.json
+    action = data.get('action')
+    url = data.get('url')
+    type = data.get('type')
+    reason = data.get('reason')
+    userIP = data.get('userIP')
+    role = data.get('role')
+'''
+@app.route('/delete_rule', methods=['POST'])
+def delete_rule():
+    data = request.json
+    url = data.get('url')
+    ip_usuario = data.get('ip_usuario')
+    rol_usuario = data.get('rol_usuario')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar si es una regla por IP
+        if ip_usuario and ip_usuario != 'ALL':
+            cursor.execute("""
+                DELETE FROM rules_by_ip
+                WHERE userIP = %s
+                AND blocked_website_id = (SELECT id FROM blocked_websites WHERE url = %s)
+            """, (ip_usuario, url))
+        
+        # Verificar si es una regla por rol
+        if rol_usuario:
+            cursor.execute("""
+                DELETE FROM rules_by_role
+                WHERE role = %s
+                AND blocked_website_id = (SELECT id FROM blocked_websites WHERE url = %s)
+            """, (rol_usuario, url))
+
+        conn.commit()
+        return jsonify({"message": "Regla eliminada correctamente"}), 200
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
 
 
 

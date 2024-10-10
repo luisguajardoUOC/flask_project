@@ -33,13 +33,13 @@ def start_proxy():
     try:
         proxy_process = subprocess.Popen(
             ['mitmdump', '--listen-port', '8080', '--ssl-insecure', '-s', 'filter_proxy2.py '],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             universal_newlines=True
         )
-        for stdout_line in iter(proxy_process.stdout.readline, ""):
-                print(stdout_line.strip())
-        proxy_process.stdout.close()
+        #for stdout_line in iter(proxy_process.stdout.readline, ""):
+        #        print(stdout_line.strip())
+        #proxy_process.stdout.close()
         # Leer la salida completa del proxy cuando termine       
 
         return jsonify({"message": "Proxy started successfully"}), 200
