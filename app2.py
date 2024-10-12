@@ -4,7 +4,7 @@ CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(255) NOT NULL UNIQUE,
     role ENUM('student', 'teacher', 'public') NOT NULL,
-    ip_address VARCHAR(45) NOT NULL,
+    userIP VARCHAR(45) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -56,6 +56,9 @@ import mysql.connector
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from db import get_db_connection #importar a función rchivo db.py
+# from collections import OrderedDict
+from collections import defaultdict
+from flask import Response
 
 app = Flask(__name__)
 CORS(app)
@@ -156,7 +159,7 @@ def add_blocked_site():
 def add_user():
     data = request.json
     username = data.get('username')
-    userIP = data.get('ip_address')
+    userIP = data.get('userIP')
     role = data.get('role')
     # Comprobar si faltan los datos y generar el mensaje de error adecuado
     
@@ -168,7 +171,7 @@ def add_user():
 
     try:
         # Insertar el nuevo usuario
-        cursor.execute("INSERT INTO users (username, ip_address, role) VALUES (%s, %s, %s)",
+        cursor.execute("INSERT INTO users (username, userIP, role) VALUES (%s, %s, %s)",
                        (username, userIP, role))
         conn.commit()
         return jsonify({"message": "Usuario añadido correctamente"}), 201
@@ -193,7 +196,7 @@ def get_users():
                 "id": user[0],
                 "name": user[1],
                 "role": user[2],
-                "ip_usuario": user[3],
+                "userIP": user[3],
                 "timeStamp": user[4]
             })
         return jsonify(users_list), 200
@@ -207,13 +210,14 @@ def get_users():
 @app.route('/add_rule', methods=['POST'])
 def add_rule():
     data = request.json
+    logging.info(data)
     action = data.get('action')
     url = data.get('url')
     type = data.get('type')
     reason = data.get('reason')
-    userIP = data.get('userIP')
-    role = data.get('role')
-
+    userIPs = data.get('userIP')
+    roles = data.get('role')
+    logging.info("add_rule: action=%s, url=%s, type=%s, reason=%s, userIPs=%s, roles=%s", action, url, type, reason, userIPs, roles)
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -230,30 +234,49 @@ def add_rule():
             conn.commit()
             blocked_website_id = cursor.lastrowid
 
-        # Paso 2: Si userIP se ha proporcionado, verificar si ya existe una regla con el mismo rol
-        if userIP:
-            # Obtener el rol del usuario basado en su IP
-            cursor.execute("SELECT role FROM users WHERE ip_address = %s", (userIP,))
-            user_role = cursor.fetchone()
-            if user_role:
-                role = user_role[0]
-                cursor.execute("""
-                               SELECT 1 
-                    FROM rules_by_role rbr 
-                    JOIN blocked_websites bw ON rbr.blocked_website_id = bw.id 
-                    WHERE rbr.role = %s AND bw.url = %s AND rbr.action = %s""", (role, url, action))
-                existing_rule = cursor.fetchone()
+        # Paso 2: Verificar si ya existe una regla con el mismo userIP o role
+        if userIPs:
+             # Construir la consulta SQL para buscar reglas existentes por userIP
+             # genera esto: SELECT id, role FROM users WHERE userIP IN ('192.168.1.10', '192.168.1.12')
+            cursor.execute("""
+                SELECT id, role, userIP FROM users WHERE userIP IN (%s)
+            """ % ','.join(['%s'] * len(userIPs)), tuple(userIPs))
+            users = cursor.fetchall()
+            logging.info("usuarios",users)
 
-                if existing_rule:
-                    return jsonify({"message": "La regla ya existe"}), 400
-         
-            # Insertar en rules_by_ip
-            cursor.execute("INSERT INTO rules_by_ip (action, userIP, blocked_website_id) VALUES (%s, %s, %s)", 
-                           (action, userIP, blocked_website_id))
-        elif role:
-            # Insertar en rules_by_role
-            cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
-                           (action, role, blocked_website_id))
+            if users:
+                for user in users:
+                    user_id, role,userIP = user
+                    # Verificar si ya existe una regla con el mismo userIP
+                    cursor.execute("""
+                        SELECT 1 FROM rules_by_ip
+                        WHERE userIP = %s AND blocked_website_id = %s AND action = %s
+                    """, (userIP, blocked_website_id, action))
+                    existing_rule = cursor.fetchone()
+
+                    if existing_rule:
+                        return jsonify({"message": f"La regla para esta IP {userIP} ya existe"}), 400
+                    
+                    cursor.execute("INSERT INTO rules_by_ip (action, userIP, blocked_website_id, user_id) VALUES (%s, %s, %s, %s)", 
+                                    (action, userIP, blocked_website_id, user_id))
+
+        # Verificar si ya existe una regla para el rol
+        if roles:
+            for role in roles:
+                # Verificar si ya existe una regla para el mismo rol y sitio web bloqueado
+                cursor.execute("""
+                    SELECT 1 
+                    FROM rules_by_role rbr
+                    WHERE rbr.role = %s AND rbr.blocked_website_id = %s AND rbr.action = %s
+                """, (role, blocked_website_id, action))
+                existing_role_rule = cursor.fetchone()
+                logging.info(existing_role_rule)
+
+                if existing_role_rule:
+                    return jsonify({"message": f"La regla para el rol {role} ya existe"}), 400
+                # Insertar en rules_by_role
+                cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
+                            (action, role, blocked_website_id))
 
         conn.commit()
         return jsonify({"message": "Regla añadida correctamente"}), 201
@@ -267,6 +290,7 @@ def add_rule():
             pass  # No hay más resultados, continuar
         cursor.close()
         conn.close()
+
 
 @app.route('/edit_rule', methods=['POST'])
 def edit_rule():
@@ -379,55 +403,115 @@ def list_rules():
     cursor = conn.cursor()
 
     try:
-        # Consulta para obtener reglas por IP y por Rol
-        query = """
+        # Consulta principal: obtener la información básica de los sitios bloqueados
+        query_main = """
             SELECT
+                bw.id AS blocked_website_id,
                 bw.url AS URL,
                 bw.type AS Categoria,
-                rbr.action AS Accion,
-                NULL AS 'IP del Usuario',  -- No se usa IP en reglas por rol
-                rbr.role AS 'Rol del Usuario'
-            FROM
-                rules_by_role rbr
-            JOIN
-                blocked_websites bw ON rbr.blocked_website_id = bw.id
-
-            UNION
-
-            SELECT
-                bw.url AS URL,
-                bw.type AS Categoria,
-                rip.action AS Accion,
-                rip.userIP AS 'IP del Usuario',
-                u.role AS 'Rol del Usuario'
+                rip.action AS Accion
             FROM
                 rules_by_ip rip
             JOIN
                 blocked_websites bw ON rip.blocked_website_id = bw.id
-            LEFT JOIN
-                users u ON rip.userIP = u.ip_address            
+            UNION
+            SELECT
+                bw.id AS blocked_website_id,
+                bw.url AS URL,
+                bw.type AS Categoria,
+                rbr.action AS Accion
+            FROM
+                rules_by_role rbr
+            JOIN
+                blocked_websites bw ON rbr.blocked_website_id = bw.id
+            ORDER BY blocked_website_id ASC;
         """
-
-        cursor.execute(query)
+        cursor.execute(query_main)
         rules = cursor.fetchall()
 
-        # Estructurar el resultado como una lista de diccionarios
+        # Consulta para obtener usuarios asociados a las reglas basadas en IP
+        query_users = """
+            SELECT
+                u.id AS user_id,
+                u.userIP AS IP_del_Usuario,
+                u.role AS Rol_del_Usuario,
+                rip.blocked_website_id
+            FROM
+                rules_by_ip rip
+            LEFT JOIN
+                users u ON rip.user_id = u.id
+            ORDER BY user_id ASC;
+        """
+        cursor.execute(query_users)
+        users = cursor.fetchall()
+
+        # Consulta para obtener roles asociados a las reglas
+        query_roles = """
+            SELECT
+                rbr.id AS rule_role_id,
+                rbr.role AS Rol_de_la_Regla,
+                rbr.blocked_website_id
+            FROM
+                rules_by_role rbr
+            ORDER BY rule_role_id ASC;
+        """
+        cursor.execute(query_roles)
+        roles = cursor.fetchall()
+
+        # Procesar la información y combinar los resultados
         rules_list = []
         for rule in rules:
+            blocked_website_id = rule[0]
+            url = rule[1]
+            categoria = rule[2]
+            accion = rule[3]
+
+            # Buscar los usuarios asociados a esta regla (por blocked_website_id)
+            usuarios = [
+                {
+                    "user_id": user[0], #if user[0] is not None else "ALL",
+                    "userIP": user[1], #if user[1] is not None else "ALL",
+                    "role": user[2], #if user[2] is not None else "ALL"
+                } for user in users if user[3] == blocked_website_id
+            ]
+            
+            # Si no hay usuarios específicos, usar 'ALL'
+            """ if not usuarios:
+                usuarios = [{
+                    "user_id": "ALL",
+                    "ip": "ALL",
+                    "rol": "ALL"
+                }]"""
+
+            # Buscar los roles asociados a esta regla (por blocked_website_id)
+            roles_assoc = [
+                {
+                    "role": role[1],
+                    "role_id": role[0]
+                } for role in roles if role[2] == blocked_website_id
+            ]
+
+
+
+            # Agregar la regla a la lista
             rules_list.append({
-                "url": rule[0],
-                "categoria": rule[1],
-                "accion": rule[2],
-                "ip_usuario": rule[3],
-                "rol_usuario": rule[4]
+                "blocked_website_id": blocked_website_id,
+                "url": url,
+                "categoria": categoria,
+                "action": accion,
+                "usuarios": usuarios,
+                "roles": roles_assoc
             })
 
-        return jsonify({"rules": rules_list}), 200
+        return Response(json.dumps({"rules": rules_list}, indent=4), mimetype='application/json')
+
     except mysql.connector.Error as err:
         return jsonify({"error": str(err)}), 500
     finally:
         cursor.close()
         conn.close()
+
+
 
 ''' data = request.json
     action = data.get('action')
@@ -440,29 +524,36 @@ def list_rules():
 @app.route('/delete_rule', methods=['POST'])
 def delete_rule():
     data = request.json
+    logging.info(data)
     url = data.get('url')
-    ip_usuario = data.get('ip_usuario')
-    rol_usuario = data.get('rol_usuario')
+    usuarios = data.get('usuarios',[])
+    roles = data.get('roles', [])
+    logging.info(f"URL: {url}, Usuarios: {usuarios}, Roles: {roles}")
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        # Verificar si es una regla por IP
-        if ip_usuario and ip_usuario != 'ALL':
-            cursor.execute("""
-                DELETE FROM rules_by_ip
-                WHERE userIP = %s
-                AND blocked_website_id = (SELECT id FROM blocked_websites WHERE url = %s)
-            """, (ip_usuario, url))
-        
-        # Verificar si es una regla por rol
-        if rol_usuario:
-            cursor.execute("""
-                DELETE FROM rules_by_role
-                WHERE role = %s
-                AND blocked_website_id = (SELECT id FROM blocked_websites WHERE url = %s)
-            """, (rol_usuario, url))
+        # Eliminar reglas por IP para cada usuario
+        for usuario in usuarios:
+            ip_usuario = usuario.get('userIP')
+            logging.info(f"IP del usuario: {ip_usuario}")
+            if ip_usuario and ip_usuario != 'ALL':
+                cursor.execute("""
+                    DELETE FROM rules_by_ip
+                    WHERE userIP = %s
+                    AND blocked_website_id = (SELECT id FROM blocked_websites WHERE url = %s)
+                """, (ip_usuario, url))
+
+        # Eliminar reglas por rol para cada rol
+        for rol in roles:
+            rol_usuario = rol.get('role')
+            if rol_usuario:
+                cursor.execute("""
+                    DELETE FROM rules_by_role
+                    WHERE role = %s
+                    AND blocked_website_id = (SELECT id FROM blocked_websites WHERE url = %s)
+                """, (rol_usuario, url))
 
         conn.commit()
         return jsonify({"message": "Regla eliminada correctamente"}), 200
@@ -471,7 +562,6 @@ def delete_rule():
     finally:
         cursor.close()
         conn.close()
-
 
 
 
@@ -538,3 +628,12 @@ def add_keyword():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+
+    """
+
+ 
+
+    
+    """
