@@ -215,9 +215,9 @@ def add_rule():
     url = data.get('url')
     type = data.get('type')
     reason = data.get('reason')
-    userIPs = data.get('userIP')
-    roles = data.get('role')
-    logging.info("add_rule: action=%s, url=%s, type=%s, reason=%s, userIPs=%s, roles=%s", action, url, type, reason, userIPs, roles)
+    userIPs = data.get('usuarios')
+    roles = data.get('roles')
+    logging.info("add_rule: action=%s, url=%s, type=%s, reason=%s, usuarios=%s, roles=%s", action, url, type, reason, userIPs, roles)
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -242,7 +242,8 @@ def add_rule():
                 SELECT id, role, userIP FROM users WHERE userIP IN (%s)
             """ % ','.join(['%s'] * len(userIPs)), tuple(userIPs))
             users = cursor.fetchall()
-            logging.info("usuarios",users)
+            logging.info("Usuarios recuperados: %s", users)
+
 
             if users:
                 for user in users:
@@ -299,8 +300,8 @@ def edit_rule():
     url = data.get('url')
     type = data.get('type')
     reason = data.get('reason')
-    userIP = data.get('userIP')
-    role = data.get('role')
+    userIPs = data.get('usuarios')
+    roles = data.get('roles')
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -319,20 +320,20 @@ def edit_rule():
             blocked_website_id = cursor.lastrowid
 
         # Actualizar en rules_by_ip si userIP está presente
-        if userIP:
-            # Dividir las IPs por coma en caso de recibir múltiples IPs
-            user_ips = [ip.strip() for ip in userIP.split(",")]
+        if userIPs is not None:
+            if not userIPs:
+                cursor.execute("DELETE FROM rules_by_ip WHERE blocked_website_id = %s", (blocked_website_id,))
             # Obtener las IPs actuales de la base de datos
             cursor.execute("SELECT userIP FROM rules_by_ip WHERE blocked_website_id = %s AND action = %s", (blocked_website_id, action))
             current_ips = [row[0] for row in cursor.fetchall()]
             # Eliminar las IPs que están en la base de datos pero no en el nuevo JSON
             for ip in current_ips:
-                if ip not in user_ips:
+                if ip not in userIPs:
                     cursor.execute("DELETE FROM rules_by_ip WHERE blocked_website_id = %s AND userIP = %s AND action = %s", 
                            (blocked_website_id, ip, action))
 
 
-            for ip in user_ips:
+            for ip in userIPs:
                 # Verificar si ya existe una entrada con el mismo blocked_website_id y userIP
                 cursor.execute("""
                     SELECT userIP FROM rules_by_ip 
@@ -349,37 +350,63 @@ def edit_rule():
                         WHERE blocked_website_id = %s AND userIP = %s
                     """, (action, blocked_website_id, ip))
                 else:
-                    # Agregar una nueva entrada para una combinación nueva de blocked_website_id y userIP
-                    cursor.execute("""
-                        INSERT INTO rules_by_ip (action, userIP, blocked_website_id)
-                        VALUES (%s, %s, %s)
-                    """, (action, ip, blocked_website_id))
+                    # Obtener el user_id correspondiente a la IP
+                    cursor.execute("SELECT id FROM users WHERE userIP = %s", (ip,))
+                    user = cursor.fetchone()
+
+                    if user:
+                        user_id = user[0]  # Obtener el user_id de la consulta
+
+                        # Insertar la nueva entrada en rules_by_ip
+                        cursor.execute("""
+                            INSERT INTO rules_by_ip (action, userIP, blocked_website_id, user_id)
+                            VALUES (%s, %s, %s, %s)
+                        """, (action, ip, blocked_website_id, user_id))
+                    else:
+                        return jsonify({"message": f"No se encontró el usuario con la IP {ip}"}), 400
 
         # Verificar si el role ha cambiado y actualizar en rules_by_role
-        elif role:
-            cursor.execute("""
-                SELECT role FROM rules_by_role 
-                WHERE blocked_website_id = %s
-            """, (blocked_website_id,))
-            current_role = cursor.fetchone()
-
-            if current_role and current_role[0] != role:
-                # Actualizar tanto el role como el action si el role es diferente
-                cursor.execute("""
-                    UPDATE rules_by_role 
-                    SET action = %s, role = %s
-                    WHERE blocked_website_id = %s
-                """, (action, role, blocked_website_id))
+        logging.info(f"roles: {roles}")
+        if roles is not None:
+            logging.info(f"roles: {roles}")
+            if not roles:  # Si el array de roles está vacío
+                logging.info("Eliminando todos los roles porque el array está vacío")
+                # Eliminar todos los roles asociados a este blocked_website_id
+                cursor.execute("DELETE FROM rules_by_role WHERE blocked_website_id = %s", (blocked_website_id,))
             else:
-                # Solo actualizar el action si el role no ha cambiado
-                cursor.execute("""
-                    UPDATE rules_by_role 
-                    SET action = %s
-                    WHERE blocked_website_id = %s
-                """, (action, blocked_website_id))
+                # Obtener los roles actuales de la base de datos
+                cursor.execute("SELECT role FROM rules_by_role WHERE blocked_website_id = %s", (blocked_website_id,))
+                current_roles = [row[0] for row in cursor.fetchall()]
+                #logging.info("current_roles: " ,current_roles)
+                
+                # Eliminar roles que están en la base de datos pero no en el nuevo JSON
+                for role in current_roles:
+                    if role not in roles:
+                        logging.info(f"Eliminando rol: {role}")
+                        cursor.execute("DELETE FROM rules_by_role WHERE blocked_website_id = %s AND role = %s", 
+                                    (blocked_website_id, role))
+
+                # Agregar o actualizar roles que están en el nuevo JSON pero no en la base de datos
+                for role in roles:
+                    if role not in current_roles:
+                        logging.info(f"Agregando nuevo rol: {role}")
+                        # Insertar el nuevo rol
+                        cursor.execute("""
+                            INSERT INTO rules_by_role (action, role, blocked_website_id)
+                            VALUES (%s, %s, %s)
+                        """, (action, role, blocked_website_id))
+                    else:
+                        # Actualizar el action si el rol ya existe
+                        logging.info(f"Actualizando acción para el rol: {role}")
+                        cursor.execute("""
+                            UPDATE rules_by_role 
+                            SET action = %s
+                            WHERE blocked_website_id = %s AND role = %s
+                        """, (action, blocked_website_id, role))
 
         conn.commit()
         return jsonify({"message": "Regla editada correctamente"}), 200
+        
 
     except mysql.connector.Error as err:
         return jsonify({"error": str(err)}), 500
@@ -435,7 +462,8 @@ def list_rules():
                 u.id AS user_id,
                 u.userIP AS IP_del_Usuario,
                 u.role AS Rol_del_Usuario,
-                rip.blocked_website_id
+                rip.blocked_website_id,
+                rip.action AS Accion
             FROM
                 rules_by_ip rip
             LEFT JOIN
@@ -450,7 +478,8 @@ def list_rules():
             SELECT
                 rbr.id AS rule_role_id,
                 rbr.role AS Rol_de_la_Regla,
-                rbr.blocked_website_id
+                rbr.blocked_website_id,
+                rbr.action AS Accion
             FROM
                 rules_by_role rbr
             ORDER BY rule_role_id ASC;
@@ -472,22 +501,17 @@ def list_rules():
                     "user_id": user[0], #if user[0] is not None else "ALL",
                     "userIP": user[1], #if user[1] is not None else "ALL",
                     "role": user[2], #if user[2] is not None else "ALL"
+                    "action": user[4]
                 } for user in users if user[3] == blocked_website_id
             ]
             
-            # Si no hay usuarios específicos, usar 'ALL'
-            """ if not usuarios:
-                usuarios = [{
-                    "user_id": "ALL",
-                    "ip": "ALL",
-                    "rol": "ALL"
-                }]"""
-
+           
             # Buscar los roles asociados a esta regla (por blocked_website_id)
             roles_assoc = [
                 {
                     "role": role[1],
-                    "role_id": role[0]
+                    "role_id": role[0],
+                    "action": role[3]
                 } for role in roles if role[2] == blocked_website_id
             ]
 
@@ -497,8 +521,7 @@ def list_rules():
             rules_list.append({
                 "blocked_website_id": blocked_website_id,
                 "url": url,
-                "categoria": categoria,
-                "action": accion,
+                "categoria": categoria,                
                 "usuarios": usuarios,
                 "roles": roles_assoc
             })
