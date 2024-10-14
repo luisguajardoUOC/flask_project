@@ -247,37 +247,71 @@ def add_rule():
 
             if users:
                 for user in users:
-                    user_id, role,userIP = user
-                    # Verificar si ya existe una regla con el mismo userIP
+                    user_id, role,userIP = user                    
+                    # Verificar si ya existe una regla con el mismo userIP pero con una acción diferente
+                    cursor.execute("""
+                        SELECT action FROM rules_by_ip
+                        WHERE userIP = %s AND blocked_website_id = %s
+                    """, (userIP, blocked_website_id))
+                    existing_action = cursor.fetchone()
+                    logging.info("existing_action: %s", existing_action)
+                    if existing_action:
+                        if existing_action[0] != action: # si es diferente acción y está añadida la borramos
+                            # Si ya existe con una acción diferente, eliminamos esa regla
+                            cursor.execute("""
+                                DELETE FROM rules_by_ip
+                                WHERE userIP = %s AND blocked_website_id = %s
+                            """, (userIP, blocked_website_id))
+                            logging.info(f"Regla para la IP {userIP} con acción diferente eliminada")
+                    # Verificar si ya existe una regla con la misma userIP y acción       
                     cursor.execute("""
                         SELECT 1 FROM rules_by_ip
                         WHERE userIP = %s AND blocked_website_id = %s AND action = %s
                     """, (userIP, blocked_website_id, action))
                     existing_rule = cursor.fetchone()
-
                     if existing_rule:
-                        return jsonify({"message": f"La regla para esta IP {userIP} ya existe"}), 400
+                        return jsonify({"message": f"La regla para esta IP {userIP} ya existe con la acción {action}"}), 400        
                     
                     cursor.execute("INSERT INTO rules_by_ip (action, userIP, blocked_website_id, user_id) VALUES (%s, %s, %s, %s)", 
                                     (action, userIP, blocked_website_id, user_id))
 
         # Verificar si ya existe una regla para el rol
+        all_roles = ['student', 'teacher', 'public']
         if roles:
             for role in roles:
-                # Verificar si ya existe una regla para el mismo rol y sitio web bloqueado
+                # Verificar si ya existe una regla para el mismo rol y sitio web
                 cursor.execute("""
-                    SELECT 1 
+                    SELECT action 
                     FROM rules_by_role rbr
-                    WHERE rbr.role = %s AND rbr.blocked_website_id = %s AND rbr.action = %s
-                """, (role, blocked_website_id, action))
-                existing_role_rule = cursor.fetchone()
-                logging.info(existing_role_rule)
+                    WHERE rbr.role = %s AND rbr.blocked_website_id = %s
+                """, (role, blocked_website_id))
+                existing_role_action = cursor.fetchall()
+                logging.info("existing_role_action: %s", existing_role_action)
+                if existing_role_action:
+                    if existing_role_action[0] != action:
+                        # Si ya existe una regla con una acción diferente, eliminarla
+                        cursor.execute("""
+                            DELETE FROM rules_by_role
+                            WHERE role = %s AND blocked_website_id = %s
+                        """, (role, blocked_website_id))
 
-                if existing_role_rule:
-                    return jsonify({"message": f"La regla para el rol {role} ya existe"}), 400
                 # Insertar en rules_by_role
                 cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
                             (action, role, blocked_website_id))
+                            # Insertar los roles faltantes como "autorizar"
+            for missing_role in all_roles:
+                if missing_role not in roles:
+                    cursor.execute("""
+                        SELECT 1 
+                        FROM rules_by_role rbr
+                        WHERE rbr.role = %s AND rbr.blocked_website_id = %s
+                    """, (missing_role, blocked_website_id))
+                    existing_auth_rule = cursor.fetchone()
+
+                    if not existing_auth_rule:
+                        # Insertar el rol faltante como autorizado
+                        cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
+                                    ('autorizar', missing_role, blocked_website_id))
 
         conn.commit()
         return jsonify({"message": "Regla añadida correctamente"}), 201
@@ -489,11 +523,17 @@ def list_rules():
 
         # Procesar la información y combinar los resultados
         rules_list = []
+        seen_blocked_website_ids = set()
         for rule in rules:
             blocked_website_id = rule[0]
             url = rule[1]
             categoria = rule[2]
             accion = rule[3]
+            # Verifica si ya hemos procesado este blocked_website_id
+            if blocked_website_id in seen_blocked_website_ids:
+                continue  # Si ya se ha procesado, lo ignoramos
+
+            seen_blocked_website_ids.add(blocked_website_id)
 
             # Buscar los usuarios asociados a esta regla (por blocked_website_id)
             usuarios = [
