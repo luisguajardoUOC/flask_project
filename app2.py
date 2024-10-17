@@ -59,6 +59,7 @@ from db import get_db_connection #importar a función rchivo db.py
 # from collections import OrderedDict
 from collections import defaultdict
 from flask import Response
+from db_queries import DatabaseQueries
 
 app = Flask(__name__)
 CORS(app)
@@ -69,6 +70,9 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %
 # Para asegurar que Flask loguee en la consola
 
 proxy_process = None 
+
+def __init__(self):
+        self.db_queries = DatabaseQueries()
 def stream_process_output(process):
     """Captura la salida de stdout y stderr en tiempo real y la imprime."""
     for line in process.stdout:
@@ -425,97 +429,43 @@ def edit_rule():
 
 
 @app.route('/list_rules', methods=['GET'])
-def list_rules():
+def list_rules(self):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        # Consulta principal: obtener la información básica de los sitios bloqueados
-        query_main = """
-            SELECT
-                bw.id AS blocked_website_id,
-                bw.url AS URL,
-                bw.type AS Categoria,
-                rip.action AS Accion
-            FROM
-                rules_by_ip rip
-            JOIN
-                blocked_websites bw ON rip.blocked_website_id = bw.id
-            UNION
-            SELECT
-                bw.id AS blocked_website_id,
-                bw.url AS URL,
-                bw.type AS Categoria,
-                rbr.action AS Accion
-            FROM
-                rules_by_role rbr
-            JOIN
-                blocked_websites bw ON rbr.blocked_website_id = bw.id
-            ORDER BY blocked_website_id ASC;
-        """
-        cursor.execute(query_main)
-        rules = cursor.fetchall()
-
-        # Consulta para obtener usuarios asociados a las reglas basadas en IP
-        query_users = """
-            SELECT
-                u.id AS user_id,
-                u.userIP AS IP_del_Usuario,
-                u.role AS Rol_del_Usuario,
-                rip.blocked_website_id,
-                rip.action AS Accion
-            FROM
-                rules_by_ip rip
-            LEFT JOIN
-                users u ON rip.user_id = u.id
-            ORDER BY user_id ASC;
-        """
-        cursor.execute(query_users)
-        users = cursor.fetchall()
-
-        # Consulta para obtener roles asociados a las reglas
-        query_roles = """
-            SELECT
-                rbr.id AS rule_role_id,
-                rbr.role AS Rol_de_la_Regla,
-                rbr.blocked_website_id,
-                rbr.action AS Accion
-            FROM
-                rules_by_role rbr
-            ORDER BY rule_role_id ASC;
-        """
-        cursor.execute(query_roles)
-        roles = cursor.fetchall()
+        # Llamar a las funciones de consulta
+        rules = self.db_queries.get_all_rules()
+        users = self.db_queries.get_users_by_ip()
+        roles = self.db_queries.get_roles_by_rule()      
 
         # Procesar la información y combinar los resultados
         rules_list = []
         for rule in rules:
-            blocked_website_id = rule[0]
-            url = rule[1]
-            categoria = rule[2]
-            accion = rule[3]
+            blocked_website_id = rule['blocked_website_id']
+            url = rule['URL']
+            categoria = rule['Categoria']
+            accion = rule['Accion']
 
             # Buscar los usuarios asociados a esta regla (por blocked_website_id)
             usuarios = [
                 {
-                    "user_id": user[0], #if user[0] is not None else "ALL",
-                    "userIP": user[1], #if user[1] is not None else "ALL",
-                    "role": user[2], #if user[2] is not None else "ALL"
-                    "action": user[4]
+                    "user_id": user['user_id'],
+                    "userIP": user['IP_del_Usuario'],
+                    "role": user['Rol_del_Usuario'],
+                    "action": user['Accion']
                 } for user in users if user[3] == blocked_website_id
             ]
-            
-           
+
+
             # Buscar los roles asociados a esta regla (por blocked_website_id)
             roles_assoc = [
                 {
-                    "role": role[1],
-                    "role_id": role[0],
-                    "action": role[3]
-                } for role in roles if role[2] == blocked_website_id
+                    "role": role['Rol_de_la_Regla'],
+                    "role_id": role['rule_role_id'],
+                    "action": role['Accion']
+                } for role in roles if role['blocked_website_id'] == blocked_website_id
             ]
-
-
 
             # Agregar la regla a la lista
             rules_list.append({
@@ -655,8 +605,100 @@ if __name__ == '__main__':
 
 
     """
+  # Consulta principal: obtener la información básica de los sitios bloqueados
+        query_main = ""
+            SELECT
+                bw.id AS blocked_website_id,
+                bw.url AS URL,
+                bw.type AS Categoria,
+                rip.action AS Accion
+            FROM
+                rules_by_ip rip
+            JOIN
+                blocked_websites bw ON rip.blocked_website_id = bw.id
+            UNION
+            SELECT
+                bw.id AS blocked_website_id,
+                bw.url AS URL,
+                bw.type AS Categoria,
+                rbr.action AS Accion
+            FROM
+                rules_by_role rbr
+            JOIN
+                blocked_websites bw ON rbr.blocked_website_id = bw.id
+            ORDER BY blocked_website_id ASC;
+        ""
+        cursor.execute(query_main)
+        rules = cursor.fetchall()
 
+        # Consulta para obtener usuarios asociados a las reglas basadas en IP
+        query_users = ""
+            SELECT
+                u.id AS user_id,
+                u.userIP AS IP_del_Usuario,
+                u.role AS Rol_del_Usuario,
+                rip.blocked_website_id,
+                rip.action AS Accion
+            FROM
+                rules_by_ip rip
+            LEFT JOIN
+                users u ON rip.user_id = u.id
+            ORDER BY user_id ASC;
+        ""
+        cursor.execute(query_users)
+        users = cursor.fetchall()
+
+        # Consulta para obtener roles asociados a las reglas
+        query_roles = ""
+            SELECT
+                rbr.id AS rule_role_id,
+                rbr.role AS Rol_de_la_Regla,
+                rbr.blocked_website_id,
+                rbr.action AS Accion
+            FROM
+                rules_by_role rbr
+            ORDER BY rule_role_id ASC;
+        ""
+        cursor.execute(query_roles)
+        roles = cursor.fetchall()
  
+# Procesar la información y combinar los resultados
+        rules_list = []
+        for rule in rules:
+            blocked_website_id = rule[0]
+            url = rule[1]
+            categoria = rule[2]
+            accion = rule[3]
 
+            # Buscar los usuarios asociados a esta regla (por blocked_website_id)
+            usuarios = [
+                {
+                    "user_id": user[0], #if user[0] is not None else "ALL",
+                    "userIP": user[1], #if user[1] is not None else "ALL",
+                    "role": user[2], #if user[2] is not None else "ALL"
+                    "action": user[4]
+                } for user in users if user[3] == blocked_website_id
+            ]
+            
+           
+            # Buscar los roles asociados a esta regla (por blocked_website_id)
+            roles_assoc = [
+                {
+                    "role": role[1],
+                    "role_id": role[0],
+                    "action": role[3]
+                } for role in roles if role[2] == blocked_website_id
+            ]
+
+
+
+            # Agregar la regla a la lista
+            rules_list.append({
+                "blocked_website_id": blocked_website_id,
+                "url": url,
+                "categoria": categoria,                
+                "usuarios": usuarios,
+                "roles": roles_assoc
+            })
     
     """

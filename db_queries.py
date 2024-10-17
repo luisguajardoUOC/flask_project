@@ -56,7 +56,7 @@ class DatabaseQueries:
         query = "SELECT url FROM authorized_websites"
         cursor.execute(query)
         return [row['url'] for row in cursor.fetchall()]
-    
+
     def get_malicious_keywords(self):
         cursor = self.db_connection.cursor(dictionary=True)
 
@@ -64,6 +64,67 @@ class DatabaseQueries:
         query = "SELECT keyword FROM malicious_keywords"
         cursor.execute(query)
         return [row['keyword'] for row in cursor.fetchall()]
+
+
+    def get_all_rules(self):
+        cursor = self.db_connection.cursor(dictionary=True)
+        query = """
+            SELECT
+                bw.id AS blocked_website_id,
+                bw.url AS URL,
+                bw.type AS Categoria,
+                rip.action AS Accion
+            FROM
+                rules_by_ip rip
+            JOIN
+                blocked_websites bw ON rip.blocked_website_id = bw.id
+            UNION
+            SELECT
+                bw.id AS blocked_website_id,
+                bw.url AS URL,
+                bw.type AS Categoria,
+                rbr.action AS Accion
+            FROM
+                rules_by_role rbr
+            JOIN
+                blocked_websites bw ON rbr.blocked_website_id = bw.id
+            ORDER BY blocked_website_id ASC;
+        """
+        cursor.execute(query)
+        return cursor.fetchall()
+
+    def get_users_by_ip(self):
+        cursor = self.db_connection.cursor(dictionary=True)
+        query = """
+            SELECT
+                u.id AS user_id,
+                u.userIP AS IP_del_Usuario,
+                u.role AS Rol_del_Usuario,
+                rip.blocked_website_id,
+                rip.action AS Accion
+            FROM
+                rules_by_ip rip
+            LEFT JOIN
+                users u ON rip.user_id = u.id
+            ORDER BY user_id ASC;
+        """
+        cursor.execute(query)
+        return cursor.fetchall()
+
+    def get_roles_by_rule(self):
+        cursor = self.db_connection.cursor(dictionary=True)
+        query = """
+            SELECT
+                rbr.id AS rule_role_id,
+                rbr.role AS Rol_de_la_Regla,
+                rbr.blocked_website_id,
+                rbr.action AS Accion
+            FROM
+                rules_by_role rbr
+            ORDER BY rule_role_id ASC;
+        """
+        cursor.execute(query)
+        return cursor.fetchall()
 
     def done(self):
         if self.db_connection.is_connected():
