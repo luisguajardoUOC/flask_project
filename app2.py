@@ -70,9 +70,9 @@ logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %
 # Para asegurar que Flask loguee en la consola
 
 proxy_process = None 
-
-def __init__(self):
-        self.db_queries = DatabaseQueries()
+db_queries = DatabaseQueries()
+#def __init__(self):
+#        self.db_queries = DatabaseQueries()
 def stream_process_output(process):
     """Captura la salida de stdout y stderr en tiempo real y la imprime."""
     for line in process.stdout:
@@ -469,9 +469,9 @@ def list_rules(self):
 
     try:
         # Llamar a las funciones de consulta
-        rules = self.db_queries.get_all_rules()
-        users = self.db_queries.get_users_by_ip()
-        roles = self.db_queries.get_roles_by_rule()      
+        rules = db_queries.get_all_rules()
+        users = db_queries.get_users_by_ip()
+        roles = db_queries.get_roles_by_rule()      
 
         # Procesar la información y combinar los resultados
         rules_list = []
@@ -489,7 +489,7 @@ def list_rules(self):
                     "userIP": user['IP_del_Usuario'],
                     "role": user['Rol_del_Usuario'],
                     "action": user['Accion']
-                } for user in users if user[3] == blocked_website_id
+                } for user in users if user['blocked_website_id']== blocked_website_id
             ]
 
 
