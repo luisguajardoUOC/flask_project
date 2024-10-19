@@ -6,7 +6,7 @@ def get_db_connection():
         connection = mysql.connector.connect(
             host="localhost",
             user="root",
-            password="lardin718",
+            password="rootpassword",
             database="flask_db"  # Asegúrate de especificar la base de datos
         )
         return connection
