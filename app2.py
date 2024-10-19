@@ -44,6 +44,71 @@ CREATE TABLE history (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
+CREATE TABLE `authorized_websites` (
+ `id` int(11) NOT NULL AUTO_INCREMENT,
+ `url` varchar(255) NOT NULL,
+ `description` text DEFAULT NULL,
+ PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `users` (
+ `id` int(11) NOT NULL AUTO_INCREMENT,
+ `username` varchar(255) NOT NULL,
+ `role` enum('student','teacher','public') NOT NULL,
+ `userIP` varchar(45) DEFAULT NULL,
+ `created_at` timestamp NULL DEFAULT current_timestamp(),
+ PRIMARY KEY (`id`),
+ UNIQUE KEY `username` (`username`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `blocked_websites` (
+ `id` int(11) NOT NULL AUTO_INCREMENT,
+ `url` varchar(255) NOT NULL,
+ `type` varchar(255) DEFAULT NULL,
+ `reason` varchar(255) DEFAULT NULL,
+ PRIMARY KEY (`id`),
+ UNIQUE KEY `url` (`url`)
+) ENGINE=InnoDB AUTO_INCREMENT=45 DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `malicious_keywords` (
+ `id` int(11) NOT NULL AUTO_INCREMENT,
+ `keyword` varchar(255) NOT NULL,
+ PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `rules_by_ip` (
+ `id` int(11) NOT NULL AUTO_INCREMENT,
+ `action` varchar(50) NOT NULL,
+ `userIP` varchar(45) NOT NULL,
+ `blocked_website_id` int(11) DEFAULT NULL,
+ `user_id` int(11) DEFAULT NULL,
+ PRIMARY KEY (`id`),
+ KEY `blocked_website_id` (`blocked_website_id`),
+ KEY `fk_user_id` (`user_id`),
+ CONSTRAINT `fk_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`),
+ CONSTRAINT `rules_by_ip_ibfk_1` FOREIGN KEY (`blocked_website_id`) REFERENCES `blocked_websites` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=85 DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE `rules_by_role` (
+ `id` int(11) NOT NULL AUTO_INCREMENT,
+ `action` varchar(50) NOT NULL,
+ `role` varchar(50) NOT NULL,
+ `blocked_website_id` int(11) DEFAULT NULL,
+ PRIMARY KEY (`id`),
+ KEY `blocked_website_id` (`blocked_website_id`),
+ CONSTRAINT `rules_by_role_ibfk_1` FOREIGN KEY (`blocked_website_id`) REFERENCES `blocked_websites` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=86 DEFAULT CHARSET=utf8mb4;
+	
+CREATE TABLE `history` (
+ `id` int(11) NOT NULL AUTO_INCREMENT,
+ `user_id` int(11) DEFAULT NULL,
+ `url` varchar(255) NOT NULL,
+ `action` varchar(50) NOT NULL,
+ `timestamp` timestamp NULL DEFAULT current_timestamp(),
+ PRIMARY KEY (`id`),
+ KEY `user_id` (`user_id`),
+ CONSTRAINT `history_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
 import subprocess
@@ -187,29 +252,30 @@ def add_user():
 
 @app.route('/get_users', methods=['GET'])
 def get_users():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    #conn = get_db_connection()
+    #cursor = conn.cursor()
 
     try:
-        cursor.execute("SELECT * FROM users")
-        users = cursor.fetchall()
+        #cursor.execute("SELECT * FROM users")
+        users = DatabaseQueries().get_users()
+        # users = cursor.fetchall()
          # Estructurar el resultado como una lista de diccionarios
         users_list = []
         for user in users:
             users_list.append({
-                "id": user[0],
-                "name": user[1],
-                "role": user[2],
-                "userIP": user[3],
-                "timeStamp": user[4]
+                "id": user['id'],         # Accediendo por clave en lugar de índice
+                "name": user['username'],  # Suponiendo que el campo en tu tabla es 'username'
+                "role": user['role'],
+                "userIP": user['userIP'],
+                "timeStamp": user['created_at']  # Si este es el nombre del campo en la tabla
             })
         return jsonify(users_list), 200
     
     except mysql.connector.Error as err:
         return jsonify({"error": str(err)}), 500
-    finally:
-        cursor.close()
-        conn.close()
+   # finally:
+      #  cursor.close()
+       # conn.close()
 
 @app.route('/add_rule', methods=['POST'])
 def add_rule():
@@ -251,7 +317,7 @@ def add_rule():
 
             if users:
                 for user in users:
-                    user_id, role,userIP = user                    
+                    user_id, role,userIP = user
                     # Verificar si ya existe una regla con el mismo userIP pero con una acción diferente
                     cursor.execute("""
                         SELECT action FROM rules_by_ip
@@ -274,8 +340,8 @@ def add_rule():
                     """, (userIP, blocked_website_id, action))
                     existing_rule = cursor.fetchone()
                     if existing_rule:
-                        return jsonify({"message": f"La regla para esta IP {userIP} ya existe con la acción {action}"}), 400        
-                    
+                        return jsonify({"message": f"La regla para esta IP {userIP} ya existe con la acción {action}"}), 400
+
                     cursor.execute("INSERT INTO rules_by_ip (action, userIP, blocked_website_id, user_id) VALUES (%s, %s, %s, %s)", 
                                     (action, userIP, blocked_website_id, user_id))
 
@@ -463,24 +529,30 @@ def edit_rule():
 
 
 @app.route('/list_rules', methods=['GET'])
-def list_rules(self):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+def list_rules():
+   # conn = get_db_connection()
+   # cursor = conn.cursor()
 
     try:
         # Llamar a las funciones de consulta
-        rules = db_queries.get_all_rules()
-        users = db_queries.get_users_by_ip()
-        roles = db_queries.get_roles_by_rule()      
+        rules = DatabaseQueries().get_all_rules()
+        users = DatabaseQueries().get_users_by_ip()
+        roles = DatabaseQueries().get_roles_by_rule()
 
         # Procesar la información y combinar los resultados
         rules_list = []
         seen_blocked_website_ids = set()
         for rule in rules:
             blocked_website_id = rule['blocked_website_id']
+            # Si este blocked_website_id ya fue agregado, saltamos esta iteración
+            if blocked_website_id in seen_blocked_website_ids:
+                continue
             url = rule['URL']
             categoria = rule['Categoria']
             accion = rule['Accion']
+
+            # Marcar el blocked_website_id como visto
+            seen_blocked_website_ids.add(blocked_website_id)
 
             # Buscar los usuarios asociados a esta regla (por blocked_website_id)
             usuarios = [
@@ -506,7 +578,7 @@ def list_rules(self):
             rules_list.append({
                 "blocked_website_id": blocked_website_id,
                 "url": url,
-                "categoria": categoria,                
+                "categoria": categoria,
                 "usuarios": usuarios,
                 "roles": roles_assoc
             })
@@ -515,9 +587,9 @@ def list_rules(self):
 
     except mysql.connector.Error as err:
         return jsonify({"error": str(err)}), 500
-    finally:
-        cursor.close()
-        conn.close()
+   # finally:
+    #    cursor.close()
+    #    conn.close()
 
 
 
