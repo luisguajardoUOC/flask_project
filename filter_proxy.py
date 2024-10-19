@@ -2,8 +2,8 @@ import http
 import logging
 from db_queries import DatabaseQueries
 from mitmproxy import ctx,http
-logging.basicConfig(level=logging.INFO) 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+#logging.basicConfig(level=logging.INFO) 
+#logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class ProxyFilter:
     def __init__(self):
@@ -16,7 +16,7 @@ class ProxyFilter:
         ctx.log.info("holaMITMPROXY")
         print(f"Request intercepted: {flow.request.url}")
         #client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
-        client_ip = "192.168.1.10"
+        client_ip = "192.168.68.104"
         requested_url = flow.request.pretty_url  # Obtener la URL solicitada
         # Registrar en el log la IP del cliente y la URL solicitada
         logging.info(f"Received request from {client_ip} for {requested_url}")        
@@ -27,12 +27,13 @@ class ProxyFilter:
         # Obtener las reglas basadas en IP desde la base de datos
         blocked_sites_by_ip = self.db_queries.get_blocked_sites(client_ip)
         logging.info(f"Blocked sites by IP: {blocked_sites_by_ip}")
-
+        autorized_sites_by_ip = self.db_queries.get_ip_autorized_sites(client_ip)
+        logging.info(f"Autorized sites by IP: {autorized_sites_by_ip}")
         # Si hay un rol asociado, obtener las reglas basadas en el rol
         blocked_sites_by_role = []
         if user_role:
             blocked_sites_by_role = self.db_queries.get_role_rules(user_role)
-
+        logging.info(f"Blocked sites by role: {blocked_sites_by_role}")
         # Combinar los sitios bloqueados de IP y rol
         all_blocked_sites = blocked_sites_by_ip + blocked_sites_by_role
         logging.info(f"All blocked sites: {all_blocked_sites}")
@@ -41,9 +42,16 @@ class ProxyFilter:
         if not all_blocked_sites:
             logging.info(f"No blocked sites for IP {client_ip} and role {user_role}")
         else:
+             # Revisar si la URL solicitada es parte de un sitio autorizado
+            is_authorized = any(auth_site["url"] in flow.request.pretty_url for auth_site in autorized_sites_by_ip)
+
+            if is_authorized:
+                logging.info(f"Skipping block for authorized URL: {flow.request.pretty_url}")
+                return  # No bloqueamos si la URL está autorizada
             for site in all_blocked_sites:
                 # logging.info(f"Checking blocked site: {site['url']}")
                 logging.info(f"flow.request: {flow.request.pretty_url}")
+                  # Si la URL está en los sitios autorizados, no se bloquea                
                 if site["url"] in flow.request.pretty_url:
                     logging.info(f"Blocking request from {client_ip} for {site['url']}: {flow.request.pretty_url}")
                     flow.response = http.Response.make(

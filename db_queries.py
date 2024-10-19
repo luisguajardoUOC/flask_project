@@ -3,8 +3,8 @@ import logging
 from mysql.connector import Error
 from db import get_db_connection 
 
-logging.basicConfig(level=logging.INFO) 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+#logging_config.basicConfig(level=logging_config.INFO) 
+#logging_config.basicConfig(level=logging_config.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 class DatabaseQueries:
     def __init__(self):
         # Conectar a la base de datos
@@ -26,7 +26,7 @@ class DatabaseQueries:
         query = """
         SELECT bw.url, bw.type, bw.reason
         FROM rules_by_ip rip
-        JOIN blocked_websites bw ON rip.blocked_website_id = bw.id
+        JOIN blocked_websites bw ON rip.blocked_website_id = bw.id and rip.action = 'bloquear'
         WHERE rip.userIP = %s
         """
         cursor.execute(query, (client_ip,))
@@ -48,7 +48,7 @@ class DatabaseQueries:
         query = """
         SELECT bw.url, bw.type, bw.reason
         FROM rules_by_role rbr
-        JOIN blocked_websites bw ON rbr.blocked_website_id = bw.id
+        JOIN blocked_websites bw ON rbr.blocked_website_id = bw.id and rbr.action = 'bloquear'
         WHERE rbr.role = %s
         """
         cursor.execute(query, (role,))
@@ -58,13 +58,26 @@ class DatabaseQueries:
         cursor = self.db_connection.cursor(dictionary=True)
 
         # Consultar el rol del usuario
-        query = "SELECT role FROM users WHERE ip_address = %s"
+        query = "SELECT role FROM users WHERE userIP = %s"
         cursor.execute(query, (userIP,))
         result = cursor.fetchone()
         if result:
             return result['role']
         else:
             return None  # Devolver None si no se encuentra ningún rol
+    def get_ip_autorized_sites(self,client_ip):
+        cursor = self.db_connection.cursor(dictionary=True)
+        # Consultar los sitios autorizados para la IP específica
+        query = """
+            SELECT bw.url 
+            FROM rules_by_ip rip
+            JOIN blocked_websites bw ON rip.blocked_website_id = bw.id
+            WHERE rip.userIP = %s AND rip.action = 'autorizar'
+            """
+        cursor.execute(query, (client_ip,))
+        result = cursor.fetchall()
+        return result
+        
 
     def get_authorized_sites(self):
         cursor = self.db_connection.cursor(dictionary=True)

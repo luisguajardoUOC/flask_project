@@ -130,8 +130,8 @@ app = Flask(__name__)
 CORS(app)
 # Configuración del logging
 
-logging.basicConfig(level=logging.INFO) 
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+#logging.basicConfig(level=logging.INFO) 
+#logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 # Para asegurar que Flask loguee en la consola
 
 proxy_process = None 
