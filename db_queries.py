@@ -18,19 +18,19 @@ class DatabaseQueries:
         if not self.db_connection.is_connected():
             self.db_connection = get_db_connection()
 
-    def get_blocked_sites(self, client_ip):
+    def get_blocked_sites(self, client_ip, requested_url):
         self.check_connection()
         cursor = self.db_connection.cursor(dictionary=True)
 
-        # Consultar las reglas de bloqueo por IP
+        # Consultar si la URL está bloqueada o autorizada para la IP dada
         query = """
-        SELECT bw.url, bw.type, bw.reason
+        SELECT bw.url, bw.type, bw.reason, rip.action
         FROM rules_by_ip rip
-        JOIN blocked_websites bw ON rip.blocked_website_id = bw.id and rip.action = 'bloquear'
-        WHERE rip.userIP = %s
+        JOIN blocked_websites bw ON rip.blocked_website_id = bw.id
+        WHERE rip.userIP = %s AND bw.url = %s
         """
-        cursor.execute(query, (client_ip,))
-        return cursor.fetchall()
+        cursor.execute(query, (client_ip, requested_url))
+        return cursor.fetchone()  # Devuelve una sola fila o None si no se encuentra
     def get_users(self):
             self.check_connection()
             cursor = self.db_connection.cursor(dictionary=True)
@@ -41,18 +41,17 @@ class DatabaseQueries:
             return cursor.fetchall()    
 
 
-    def get_role_rules(self, role):
+    def get_role_rules(self, role, request_url):
         cursor = self.db_connection.cursor(dictionary=True)
 
-        # Consultar las reglas de bloqueo por rol
         query = """
-        SELECT bw.url, bw.type, bw.reason
+        SELECT bw.url, bw.type, bw.reason, rbr.action
         FROM rules_by_role rbr
-        JOIN blocked_websites bw ON rbr.blocked_website_id = bw.id and rbr.action = 'bloquear'
-        WHERE rbr.role = %s
+        JOIN blocked_websites bw ON rbr.blocked_website_id = bw.id
+        WHERE rbr.role = %s AND bw.url = %s
         """
-        cursor.execute(query, (role,))
-        return cursor.fetchall()
+        cursor.execute(query, (role, request_url))
+        return cursor.fetchone()
 
     def get_role_user(self, userIP):
         cursor = self.db_connection.cursor(dictionary=True)

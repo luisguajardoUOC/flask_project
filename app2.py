@@ -189,6 +189,32 @@ def stop_proxy():
     except Exception as e:
         return jsonify({"message": f"Failed to stop proxy: {str(e)}"}), 500
 
+@app.route('/reload_proxy', methods=['GET'])
+def reload_proxy():
+    # Llamar a la función stop_proxy para detener el proxy
+    stop_response = stop_proxy()
+    stop_status_code = stop_response[1]
+
+    if stop_status_code != 200:
+        return jsonify({"message": "Failed to stop proxy for reload"}), stop_status_code
+
+    # Llamar a la función start_proxy para iniciar nuevamente el proxy
+    start_response = start_proxy()
+    start_status_code = start_response[1]
+
+    if start_status_code == 200:
+        return jsonify({"message": "Proxy reloaded successfully"}), 200
+    else:
+        return jsonify({"message": "Failed to start proxy after reload"}), start_status_code
+
+@app.route('/proxy_status', methods=['GET'])
+def proxy_status():
+    global proxy_process
+    if proxy_process is not None:
+        return jsonify({"message": "Proxy is running"}), 200
+    else:
+        return jsonify({"message": "Proxy is not running"}), 400
+
 #Ruta para agregar webs a bloquear
 @app.route('/add_blocked_site', methods=['POST'])
 def add_blocked_site():
@@ -239,11 +265,48 @@ def add_user():
     cursor = conn.cursor()
 
     try:
+        # Verificar si la IP ya existe en la base de datos
+        cursor.execute("SELECT id FROM users WHERE userIP = %s", (userIP,))
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            return jsonify({"error": "La IP ya está asignada a otro usuario"}), 400
         # Insertar el nuevo usuario
         cursor.execute("INSERT INTO users (username, userIP, role) VALUES (%s, %s, %s)",
                        (username, userIP, role))
         conn.commit()
         return jsonify({"message": "Usuario añadido correctamente"}), 201
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+@app.route('/edit_user', methods=['POST'])
+def edit_user():
+    data = request.json
+    id = data.get('id')
+    username = data.get('username')
+    userIP = data.get('userIP')
+    role = data.get('role')
+
+    if not id or not username or not userIP or not role:
+        return jsonify({"error": "Faltan datos"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()    
+
+    try:
+        # Verificar si la IP ya está asignada a otro usuario (exceptuando el mismo usuario)
+        cursor.execute("SELECT id FROM users WHERE userIP = %s AND id != %s", (userIP, id))
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            return jsonify({"error": "La IP ya está asignada a otro usuario"}), 400
+
+        cursor.execute("UPDATE users SET username = %s, userIP = %s, role = %s WHERE id = %s",
+                       (username, userIP, role, id))
+        conn.commit()
+        return jsonify({"message": "Usuario editado correctamente"}), 200
     except mysql.connector.Error as err:
         return jsonify({"error": str(err)}), 500
     finally:
@@ -264,7 +327,7 @@ def get_users():
         for user in users:
             users_list.append({
                 "id": user['id'],         # Accediendo por clave en lugar de índice
-                "name": user['username'],  # Suponiendo que el campo en tu tabla es 'username'
+                "username": user['username'],  # Suponiendo que el campo en tu tabla es 'username'
                 "role": user['role'],
                 "userIP": user['userIP'],
                 "timeStamp": user['created_at']  # Si este es el nombre del campo en la tabla
