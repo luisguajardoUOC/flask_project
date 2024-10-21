@@ -1,5 +1,7 @@
+from errno import errorcode
 import http
 import logging
+import mysql
 from mysql.connector import Error
 from db import get_db_connection 
 
@@ -18,7 +20,7 @@ class DatabaseQueries:
         if not self.db_connection.is_connected():
             self.db_connection = get_db_connection()
 
-    def get_blocked_sites(self, client_ip, requested_url):
+    def get_blocked_site_by_ip(self, client_ip, requested_url):
         self.check_connection()
         cursor = self.db_connection.cursor(dictionary=True)
 
@@ -170,9 +172,39 @@ class DatabaseQueries:
             """
             cursor.execute(query)
             result =  cursor.fetchall()
+        except mysql.connector.Error as err:
+            logging.error(f"Error en la consulta de roles: {err}")
+            result = []  # En caso de error devolvemos una lista vacía o lo que sea apropiado
         finally:
             cursor.close()  # Cerramos el cursor para liberar recursos
         return result
+
+
+    def registrar_historico(self, url, action, client_ip=None, user_role=None):
+        # Código para guardar en la base de datos        
+        self.check_connection()
+        cursor = self.db_connection.cursor(dictionary=True)
+        try:
+            if user_role:
+                query = "INSERT INTO historial ( ip, url, accion, rol, fecha) VALUES (%s, %s, %s, %s, NOW())"
+                logging.info(f"Historial registrado: ROL={user_role}, URL={url}, Accion={action}")
+                cursor.execute(query, ( url, action, user_role))
+            else:
+                query = "INSERT INTO historial (ip, url, accion, fecha) VALUES (%s, %s, %s, NOW())"
+                cursor.execute(query, (client_ip, url, action))
+            self.db_connection.commit()
+            logging.info(f"Historial registrado: IP={client_ip}, URL={url}, Accion={action}")
+            return True  # Indica que se guardó correctamente
+        except mysql.connector.Error as err:
+            if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+                logging.error("Acceso denegado a la base de datos")
+            elif err.errno == errorcode.ER_BAD_DB_ERROR:
+                logging.error("Base de datos no encontrada")
+            else:
+                logging.error(err)
+        finally:
+            cursor.close()
+
 
     def done(self):
         if self.db_connection.is_connected():

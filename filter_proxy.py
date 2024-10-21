@@ -32,13 +32,15 @@ class ProxyFilter:
         logging.info(f"User role: {user_role}")
 
         # Obtener las reglas basadas en IP desde la base de datos
-        blocked_sites_by_ip = self.db_queries.get_blocked_sites(client_ip,requested_domain)
+        blocked_sites_by_ip = self.db_queries.get_blocked_site_by_ip(client_ip,requested_domain)
         logging.info(f"Blocked sites by IP: {blocked_sites_by_ip}")
 
         if blocked_sites_by_ip:
             if blocked_sites_by_ip['action'] == 'autorizar':
                 logging.info(f"Skipping block for authorized URL: {requested_domain} by IP")
+                self.db_queries.registrar_historico(client_ip, requested_url, 'autorizar')
                 return  # No bloqueamos si la URL está autorizada
+            #bloqueo si la IP está bloqueada y salimos de la función
             elif blocked_sites_by_ip['action'] == 'bloquear':
                 logging.info(f"Blocking request from {client_ip} for {requested_domain}")
                 flow.response = http.Response.make(
@@ -46,16 +48,20 @@ class ProxyFilter:
                     b"Access to this site is blocked by the proxy.",
                     {"Content-Type": "text/html"}
                 )
+                self.db_queries.registrar_historico( requested_url, 'bloquear', client_ip)
                 flow.metadata["blocked"] = True
                 return
+        # si no hay IP bloqueada revisamos roles bloqueados
         if user_role:
             blocked_sites_by_role = self.db_queries.get_role_rules(user_role,requested_domain)
             logging.info(f"Blocked sites by role: {blocked_sites_by_role}")
             if blocked_sites_by_role:
                 if blocked_sites_by_role['action'] == 'autorizar':
                     logging.info(f"Skipping block for authorized URL: {requested_domain} by role")
+                    self.db_queries.registrar_historico( requested_url, 'autorizar', user_role)
                     return  # No bloqueamos si la URL está autorizada
                 elif blocked_sites_by_role['action'] == 'bloquear':
+                    self.db_queries.registrar_historico( requested_url, 'bloquear', user_role)
                     logging.info(f"Blocking request from {client_ip} for {requested_domain}")
                     flow.response = http.Response.make(
                         403,  # Código HTTP 403
