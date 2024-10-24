@@ -1,49 +1,6 @@
 
 """
-CREATE TABLE users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(255) NOT NULL UNIQUE,
-    role ENUM('student', 'teacher', 'public') NOT NULL,
-    userIP VARCHAR(45) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
-CREATE TABLE blocked_websites (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    url VARCHAR(255) NOT NULL UNIQUE,
-    type VARCHAR(255),
-    reason VARCHAR(255)
-);
-
-CREATE TABLE rules_by_ip (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    action VARCHAR(50) NOT NULL,
-    userIP VARCHAR(45) NOT NULL,
-    blocked_website_id INT,
-    FOREIGN KEY (blocked_website_id) REFERENCES blocked_websites(id)
-);
-
-CREATE TABLE rules_by_role (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    action VARCHAR(50) NOT NULL,
-    role VARCHAR(50) NOT NULL,
-    blocked_website_id INT,
-    FOREIGN KEY (blocked_website_id) REFERENCES blocked_websites(id)
-);
-
-CREATE TABLE malicious_keywords (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    keyword VARCHAR(255) NOT NULL
-);
-
-CREATE TABLE history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    url VARCHAR(255) NOT NULL,
-    action VARCHAR(50) NOT NULL, -- 'allowed' o 'blocked'
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
 CREATE TABLE `authorized_websites` (
  `id` int(11) NOT NULL AUTO_INCREMENT,
  `url` varchar(255) NOT NULL,
@@ -125,6 +82,7 @@ from db import get_db_connection #importar a función rchivo db.py
 from collections import defaultdict
 from flask import Response
 from db_queries import DatabaseQueries
+from json_utils import read_block_messages, write_block_messages
 
 app = Flask(__name__)
 CORS(app)
@@ -768,6 +726,83 @@ def add_keyword():
     finally:
         cursor.close()
         conn.close()
+@app.route('/delete_keyword', methods=['POST'])
+def delete_keyword():
+    data = request.json
+    keyword = data.get('keyword')
+
+    if not keyword: 
+        return jsonify({"error": "Falta la palabra clave"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM malicious_keywords WHERE keyword = %s", (keyword,))
+        conn.commit()    
+        return jsonify({"message": "Palabra clave eliminada correctamente"}), 200
+    except mysql.connector.Error as err:    
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+@app.route('/get_keywords', methods=['GET'])
+def keywords():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT keyword FROM malicious_keywords")
+        keywords = cursor.fetchall()
+        return jsonify(keywords), 200
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/history', methods=['GET'])
+def history():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM history")
+        history = cursor.fetchall()
+        return jsonify(history), 200
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.route('/change_message', methods=['POST'])
+def change_message():
+    data = request.json
+     # Obtener los valores de 'mensaje_rule' y 'mensaje_words'
+    message_rule = data.get('message_rule')
+    message_word = data.get('message_word')
+
+    if not message_rule or not message_word:
+        return jsonify({"error": "Falta el mensaje"}), 400
+
+      # Leer el archivo JSON existente usando la función importada
+    mensaje_data = read_block_messages()
+    if "error" in mensaje_data:
+        return jsonify(mensaje_data), 500  # Si hubo un error al leer el archivo
+
+    # Modificar el contenido del archivo con los nuevos valores
+    mensaje_data['message_rule'] = message_rule
+    mensaje_data['message_word'] = message_word
+    # Guardar los nuevos datos en el archivo JSON
+   # Guardar los nuevos datos en el archivo JSON usando la función importada
+    result = write_block_messages(mensaje_data)
+    if isinstance(result, dict) and "error" in result:
+        return jsonify(result), 500  # Si hubo un error al escribir en el archivo
+
+
+    # Respuesta exitosa
+    return jsonify({'success': True, 'message': 'Messages saved successfully'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)

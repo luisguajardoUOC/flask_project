@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+    <html>
+    <head>
+        <title>Access Blocked</title>
+        <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 50px auto;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #d9534f;
+        }
+        p {
+            font-size: 16px;
+        }
+        .details {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #d9534f;
+            color: #fff;
+            border-radius: 5px;
+            text-decoration: none;
+            margin-top: 20px;
+        }
+        .button:hover {
+            background-color: #c9302c;
+        }
+        </style>
+    </head>
+    <body>
+        <div class='container'>
+        <h1>Access Denied</h1>
+        <p>{{message}}</p>
+        <p>Your access to this website has been blocked by the proxy.</p>
+        <div class='details'>
+            <p>If you believe this is a mistake, please contact your network administrator.</p>
+            <p><strong>Time of Block:{{time}}</strong> </p>
+            <p><strong>Requested URL:{{url}}</strong> </p>
+            <p><strong>Your IP Address:{{userIP}}</strong> </p>
+        </div>
+        <a href='https://www.google.com' class='button'>Go Back to Homepage</a>
+        </div>
+    </body>
+    </html>
