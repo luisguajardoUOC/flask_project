@@ -3,7 +3,8 @@ import logging
 from db_queries import DatabaseQueries
 from mitmproxy import ctx,http
 from urllib.parse import urlparse
-from json_utils import read_block_messages, write_block_messages, load_html_template
+#from json_utils import read_block_messages, write_block_messages, load_html_template, load_ips, load_certificates, is_first_connection, register_client_ip
+from json_utils import json_utils
 from datetime import datetime
 #logging.basicConfig(level=logging.INFO) 
 #logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -11,6 +12,7 @@ from datetime import datetime
 class ProxyFilter:
     def __init__(self):
         self.db_queries = DatabaseQueries()
+        self.json_utils = json_utils()
         logging.info("Script filter_proxy.py loaded")
         print("Script filter_proxy.py loaded")
 
@@ -21,15 +23,36 @@ class ProxyFilter:
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         #client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
         client_ip = "192.168.68.104"
-        requested_url = flow.request.pretty_url  # Obtener la URL solicitada        
+        logging.info(f"Client IP: {client_ip}, {flow.client_conn}")
+        #client_ip = "192.168.68.104"
+        ips_with_cert = self.json_utils.load_ips()
+        logging.info(f"IPs with certificate: {ips_with_cert}")
+        if self.json_utils.is_first_connection(client_ip, ips_with_cert):
+            self.json_utils.register_client_ip(client_ip)
+            logging.info(f"Registered client IP First Connection: {client_ip}")
+             # Log the certificate being loaded
+            certificate = self.json_utils.load_certificates()
+            
+            logging.info(f"Loaded certificates: {certificate}")
+            flow.response = http.Response.make(
+                200,  # Código de respuesta HTTP
+                certificate,                
+                {"Content-Disposition": "attachment; filename=mitmproxy-ca-cert.pem",
+                 "Content-Type": "application/x-x509-ca-cert"
+                }
+            )
+            logging.info(f"Flow response status: {flow.response.status_code}, headers: {flow.response.headers}")
+
+        # Obtener la URL solicitada
+        requested_url = flow.request.pretty_url  # Obtener la URL solicitada
           # Parsear la URL solicitada
         parsed_url = urlparse(requested_url)
         requested_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"  # Domínio con esquema
         logging.info(f"Requested domain: {requested_domain}")
         #requested_domain = flow.request.host  # Obtener el dominio de la URL
         # Registrar en el log la IP del cliente y la URL solicitada
-        logging.info(f"Received request from {client_ip} for {requested_url} ({requested_domain})")   
-        
+        logging.info(f"Received request from {client_ip} for {requested_url} ({requested_domain})")
+
         # user_role = "student"  # Aquí se obtendría el rol del usuario de alguna manera (quizás desde la base de datos)
         user_role = self.db_queries.get_role_user(client_ip)
         logging.info(f"User role: {user_role}")
@@ -38,7 +61,7 @@ class ProxyFilter:
         blocked_sites_by_ip = self.db_queries.get_blocked_site_by_ip(client_ip,requested_domain)
         logging.info(f"Blocked sites by IP: {blocked_sites_by_ip}")
         # Leer el mensaje de bloqueo personalizado del archivo JSON
-        block_message_data = read_block_messages()
+        block_message_data = self.json_utils.read_block_messages()
         if blocked_sites_by_ip:
             if blocked_sites_by_ip['action'] == 'autorizar':
                 logging.info(f"Skipping block for authorized URL: {requested_domain} by IP")
@@ -49,7 +72,7 @@ class ProxyFilter:
                 logging.info(f"Blocking request from {client_ip} for {requested_domain}")
                 # Combinar el mensaje en el HTML personalizado
                 #html_content = block_message_data.get('html_content').replace('{{message}}',block_message_data.get('message_rule'))
-                html_content= load_html_template(block_message_data.get('message_rule'),current_time,requested_domain,client_ip)
+                html_content= self.json_utils.load_html_template(block_message_data.get('message_rule'),current_time,requested_domain,client_ip)
                 flow.response = http.Response.make(
                     403,  # Código HTTP 403
                     #b"Access to this site is blocked by the proxy.",
@@ -72,7 +95,7 @@ class ProxyFilter:
                     
                     self.db_queries.registrar_historico( requested_url, 'bloquear', user_role)
                     logging.info(f"Blocking request from {client_ip} for {requested_domain}")
-                    html_content= load_html_template(block_message_data.get('message_rule'),current_time,requested_domain,client_ip)
+                    html_content= self.json_utils.load_html_template(block_message_data.get('message_rule'),current_time,requested_domain,client_ip)
                     flow.response = http.Response.make(
                         403,  # Código HTTP 403
                         html_content.encode(),  # HTML personalizado
@@ -151,10 +174,10 @@ class ProxyFilter:
         content = flow.response.get_text(strict=False)
         for keyword in malicious_keywords:
              # Leer el mensaje de bloqueo personalizado del archivo JSON
-            block_message_data = read_block_messages()
+            block_message_data = self.json_utils.read_block_messages()
             if keyword in content:
                 logging.info(f"Suspicious keyword '{keyword}' detected in response content: {flow.request.pretty_url}")
-                html_content= load_html_template(block_message_data.get('message_word'),current_time,requested_domain,client_ip)
+                html_content= self.json_utils.load_html_template(block_message_data.get('message_word'),current_time,requested_domain,client_ip)
 
                 # Generar respuesta HTTP 403 cuando coincida con el filtro
                 flow.response = http.Response.make(

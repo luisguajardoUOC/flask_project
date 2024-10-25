@@ -82,18 +82,20 @@ from db import get_db_connection #importar a función rchivo db.py
 from collections import defaultdict
 from flask import Response
 from db_queries import DatabaseQueries
-from json_utils import read_block_messages, write_block_messages
+from json_utils import json_utils
+#from json_utils import read_block_messages, write_block_messages
 
 app = Flask(__name__)
 CORS(app)
 # Configuración del logging
 
-#logging.basicConfig(level=logging.INFO) 
-#logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO) 
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 # Para asegurar que Flask loguee en la consola
 
 proxy_process = None 
 db_queries = DatabaseQueries()
+json_utils = json_utils()
 #def __init__(self):
 #        self.db_queries = DatabaseQueries()
 def stream_process_output(process):
@@ -494,40 +496,81 @@ def edit_rule():
         logging.info(f"roles: {roles}")
         if roles is not None:
             logging.info(f"roles: {roles}")
-            if not roles:  # Si el array de roles está vacío
-                logging.info("Eliminando todos los roles porque el array está vacío")
+            logging.info(f"action: {action}")
+            #if not roles:  # Si el array de roles está vacío
+                #logging.info("Eliminando todos los roles porque el array está vacío")
                 # Eliminar todos los roles asociados a este blocked_website_id
-                cursor.execute("DELETE FROM rules_by_role WHERE blocked_website_id = %s", (blocked_website_id,))
-            else:
-                # Obtener los roles actuales de la base de datos
-                cursor.execute("SELECT role FROM rules_by_role WHERE blocked_website_id = %s", (blocked_website_id,))
-                current_roles = [row[0] for row in cursor.fetchall()]
-                #logging.info("current_roles: " ,current_roles)
+                #cursor.execute("DELETE FROM rules_by_role WHERE blocked_website_id = %s adn action = %s", (blocked_website_id,action))
+                # Mover todos los roles a 'autorizar' en lugar de eliminarlos
+                #cursor.execute("UPDATE rules_by_role SET action = 'autorizar' WHERE blocked_website_id = %s AND action = %s", 
+                        #(blocked_website_id, action))
+            #else:
+                # Obtener los roles actuales de la base de datos con sus acciones
+            cursor.execute("SELECT role, action FROM rules_by_role WHERE blocked_website_id = %s", (blocked_website_id,))
+            current_roles = cursor.fetchall()  # Obtener los roles y las acciones actuales
+            #current_roles = {row[0]: row[1] for row in cursor.fetchall()}
+            
+            # Agregar más logs para ver qué está sucediendo
+            logging.info(f"Consulta SQL ejecutada para roles con blocked_website_id: {blocked_website_id}")
+            logging.info(f"Roles obtenidos de la base de datos: {current_roles}")
+
+            # Separar roles bloqueados y autorizados
+            current_blocked_roles = [row[0] for row in current_roles if row[1] == 'bloquear']
+            current_authorized_roles = [row[0] for row in current_roles if row[1] == 'autorizar']
+
+            logging.info(f"current_blocked_roles: {current_blocked_roles}")
+            logging.info(f"current_authorized_roles: {current_authorized_roles}")
+            #logging.info("current_roles: " ,current_roles)
+                # Mover roles de 'bloquear' a 'autorizar' si han sido eliminados del JSON
+            if action == "bloquear":
+                for role in current_blocked_roles:
+                    if role not in roles:  # El rol ya no está en el JSON, cambiarlo a 'autorizar'
+                        logging.info(f"Moviendo rol {role} de 'bloquear' a 'autorizar'")
+                        cursor.execute("UPDATE rules_by_role SET action = 'autorizar' WHERE blocked_website_id = %s AND role = %s",
+                                    (blocked_website_id, role))                       
+
+                # Mantener los roles que aún están autorizados pero no deben ser bloqueados
+                for role in current_authorized_roles:
+                    if role  in roles:  # Si el rol no está en el JSON, mantenerlo en 'bloquear'
+                        logging.info(f"Moviendo rol {role} de 'autorizar' a 'bloquear'")
+                        cursor.execute("UPDATE rules_by_role SET action = 'bloquear' WHERE blocked_website_id = %s AND role = %s",
+                                    (blocked_website_id, role))
+            elif action == "autorizar":
+                # Mover roles de 'autorizar' a 'bloquear' si están presentes en el JSON
+                for role in current_authorized_roles:
+                    if role not in roles:  # El rol está en el JSON, cambiarlo a 'bloquear'
+                        logging.info(f"Moviendo rol {role} de 'autorizar' a 'bloquear'")
+                        cursor.execute("UPDATE rules_by_role SET action = 'bloquear' WHERE blocked_website_id = %s AND role = %s",
+                                    (blocked_website_id, role))
+                # Mantener los roles que aún están bloqueados pero no deben ser autorizados
+                for role in current_blocked_roles:
+                    if role  in roles:  # Si el rol no está en el JSON, mantenerlo en 'autorizar'
+                        logging.info(f"Moviendo rol {role} de 'bloquear' a 'autorizar'")
+                        cursor.execute("UPDATE rules_by_role SET action = 'autorizar' WHERE blocked_website_id = %s AND role = %s",
+                                    (blocked_website_id, role))
                 
-                # Eliminar roles que están en la base de datos pero no en el nuevo JSON
+                # Actualizar roles que están en el nuevo JSON y ya existen en la base de datos
+                """ for role in roles:
+                    if role in current_authorized_roles:
+                        logging.info(f"Actualizando rol autorizado {role} con acción {action}")
+                        cursor.execute("UPDATE rules_by_role SET action = %s WHERE blocked_website_id = %s AND role = %s ", (action, blocked_website_id, role))
+                 # Eliminar roles que están en la base de datos pero no en el nuevo JSON
                 for role in current_roles:
                     if role not in roles:
                         logging.info(f"Eliminando rol: {role}")
-                        cursor.execute("DELETE FROM rules_by_role WHERE blocked_website_id = %s AND role = %s", 
-                                    (blocked_website_id, role))
-
+                        #cursor.execute("DELETE FROM rules_by_role WHERE blocked_website_id = %s AND role = %s AND action = %s",(blocked_website_id, role, action))
+                        cursor.execute("UPDATE rules_by_role SET action = 'autorizar' WHERE blocked_website_id = %s AND role = %s",
+                               (blocked_website_id, role))
                 # Agregar o actualizar roles que están en el nuevo JSON pero no en la base de datos
                 for role in roles:
                     if role not in current_roles:
-                        logging.info(f"Agregando nuevo rol: {role}")
+                        logging.info(f"Agregando nuevo rol: {role}  con acción {action}")
                         # Insertar el nuevo rol
-                        cursor.execute("""
-                            INSERT INTO rules_by_role (action, role, blocked_website_id)
-                            VALUES (%s, %s, %s)
-                        """, (action, role, blocked_website_id))
+                        cursor.execute(" INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s) ", (action, role, blocked_website_id))
                     else:
                         # Actualizar el action si el rol ya existe
                         logging.info(f"Actualizando acción para el rol: {role}")
-                        cursor.execute("""
-                            UPDATE rules_by_role 
-                            SET action = %s
-                            WHERE blocked_website_id = %s AND role = %s
-                        """, (action, blocked_website_id, role))
+                        cursor.execute(" UPDATE rules_by_role SET action = %s WHERE blocked_website_id = %s AND role = %s ", (action, blocked_website_id, role))""" 
 
         conn.commit()
         return jsonify({"message": "Regla editada correctamente"}), 200
@@ -787,7 +830,7 @@ def change_message():
         return jsonify({"error": "Falta el mensaje"}), 400
 
       # Leer el archivo JSON existente usando la función importada
-    mensaje_data = read_block_messages()
+    mensaje_data =  json_utils.read_block_messages()
     if "error" in mensaje_data:
         return jsonify(mensaje_data), 500  # Si hubo un error al leer el archivo
 
@@ -796,7 +839,7 @@ def change_message():
     mensaje_data['message_word'] = message_word
     # Guardar los nuevos datos en el archivo JSON
    # Guardar los nuevos datos en el archivo JSON usando la función importada
-    result = write_block_messages(mensaje_data)
+    result = json_utils.write_block_messages(mensaje_data)
     if isinstance(result, dict) and "error" in result:
         return jsonify(result), 500  # Si hubo un error al escribir en el archivo
 
