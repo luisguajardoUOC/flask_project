@@ -21,9 +21,10 @@ class ProxyFilter:
         ctx.log.info("holaMITMPROXY")
         print(f"Request intercepted: {flow.request.url}")
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
-        #client_ip = "192.168.68.104"
-        logging.info(f"Client IP: {client_ip}, {flow.client_conn}")
+        #client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
+        client_ip = "192.168.68.106"
+        user_id = self.db_queries.get_iduser_by_ip(client_ip)
+        logging.info(f"Client IP: {client_ip},  User ID: {user_id}, Client Connection: {flow.client_conn}")
         #client_ip = "192.168.68.104"
         ips_with_cert = self.json_utils.load_ips()
         logging.info(f"IPs with certificate: {ips_with_cert}")
@@ -52,6 +53,7 @@ class ProxyFilter:
         #requested_domain = flow.request.host  # Obtener el dominio de la URL
         # Registrar en el log la IP del cliente y la URL solicitada
         logging.info(f"Received request from {client_ip} for {requested_url} ({requested_domain})")
+        # Inicializamos `visited_urls` como un conjunto si aún no está creado
 
         # user_role = "student"  # Aquí se obtendría el rol del usuario de alguna manera (quizás desde la base de datos)
         user_role = self.db_queries.get_role_user(client_ip)
@@ -63,9 +65,20 @@ class ProxyFilter:
         # Leer el mensaje de bloqueo personalizado del archivo JSON
         block_message_data = self.json_utils.read_block_messages()
         if blocked_sites_by_ip:
+            if "visited_urls" not in flow.metadata:
+                flow.metadata["visited_urls"] = set()
+                logging.info(f"Initialized visited_urls: {flow.metadata['visited_urls']}")
+
             if blocked_sites_by_ip['action'] == 'autorizar':
                 logging.info(f"Skipping block for authorized URL: {requested_domain} by IP")
-                self.db_queries.registrar_historico(client_ip, requested_url, 'autorizar')
+                logging.info(f"user_id: {user_id}, requested_domain: {requested_domain}, user_role: {user_role}")
+
+                if requested_domain in flow.metadata["visited_urls"]:
+                    logging.info(f"Skipping block for visited URL: {requested_domain}")
+                    return
+                else: 
+                    flow.metadata["visited_urls"].add(requested_domain)
+                    self.db_queries.historical_register(user_id, requested_domain,'autorizar',user_role)
                 return  # No bloqueamos si la URL está autorizada
             #bloqueo si la IP está bloqueada y salimos de la función
             elif blocked_sites_by_ip['action'] == 'bloquear':
@@ -79,7 +92,13 @@ class ProxyFilter:
                     html_content.encode(),  # HTML personalizado
                     {"Content-Type": "text/html"}
                 )
-                self.db_queries.registrar_historico( requested_url, 'bloquear', client_ip)
+                logging.info(f"user_id: {user_id}, requested_domain: {requested_domain}, user_role: {user_role}")
+                if requested_domain in flow.metadata["visited_urls"]:
+                    logging.info(f"Skipping block for visited URL: {requested_domain}")
+                    return
+                else: 
+                    flow.metadata["visited_urls"].add(requested_domain)
+                    self.db_queries.historical_register(user_id, requested_domain,'autorizar',user_role)
                 flow.metadata["blocked"] = True
                 return
         """# Si hay IPs autorizadas pero la actual no está en la lista de autorizadas

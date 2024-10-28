@@ -48,14 +48,22 @@ class DatabaseQueries:
         authorized_ips = [row['userIP'] for row in cursor.fetchall()]
         return authorized_ips #devolverá las IPs autorizadas para la URL solicitada
     def get_users(self):
-            self.check_connection()
-            cursor = self.db_connection.cursor(dictionary=True)
+        self.check_connection()
+        cursor = self.db_connection.cursor(dictionary=True)
 
-            # Consultar todos los usuarios
-            query = "SELECT * FROM users"
-            cursor.execute(query)
-            return cursor.fetchall()    
-
+        # Consultar todos los usuarios
+        query = "SELECT * FROM users"
+        cursor.execute(query)
+        return cursor.fetchall()    
+    
+    def get_iduser_by_ip(self, userIP):
+        self.check_connection()
+        cursor = self.db_connection.cursor(dictionary=True)
+        query = "SELECT id FROM users WHERE userIP = %s"
+        cursor.execute(query, (userIP,))
+        result = cursor.fetchone()
+        cursor.close()
+        return result['id'] if result else None
 
     def get_role_rules(self, role, request_url):
         cursor = self.db_connection.cursor(dictionary=True)
@@ -194,20 +202,21 @@ class DatabaseQueries:
         return result
 
 
-    def registrar_historico(self, url, action, client_ip=None, user_role=None):
+    def historical_register(self, user_id, url, action, user_role):
         # Código para guardar en la base de datos        
         self.check_connection()
-        cursor = self.db_connection.cursor(dictionary=True)
+        cursor = self.db_connection.cursor()
+        #cursor = self.db_connection.cursor(dictionary=True)
         try:
-            if user_role:
-                query = "INSERT INTO historial ( ip, url, accion, rol, fecha) VALUES (%s, %s, %s, %s, NOW())"
-                logging.info(f"Historial registrado: ROL={user_role}, URL={url}, Accion={action}")
-                cursor.execute(query, ( url, action, user_role))
-            else:
-                query = "INSERT INTO historial (ip, url, accion, fecha) VALUES (%s, %s, %s, NOW())"
-                cursor.execute(query, (client_ip, url, action))
+           #if user_role:
+            query = "INSERT INTO history ( user_id, url, action, user_rol, timestamp ) VALUES (%s, %s, %s, %s, NOW())"            
+            cursor.execute(query, (user_id, url, action, user_role))            
+            #cursor.execute(query, ( user_id, url, action, user_role))
+            #else:
+                #query = "INSERT INTO historial (ip, url, accion, fecha) VALUES (%s, %s, %s, NOW())"
+                #cursor.execute(query, (client_ip, url, action))
             self.db_connection.commit()
-            logging.info(f"Historial registrado: IP={client_ip}, URL={url}, Accion={action}")
+            logging.info(f"Historial registrado: user_id={user_id},  role= {user_role}, URL={url}, Accion={action}")
             return True  # Indica que se guardó correctamente
         except mysql.connector.Error as err:
             if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
