@@ -115,7 +115,7 @@ def start_proxy():
     # Iniciar el proxy usando subprocess
     try:
         proxy_process = subprocess.Popen(
-            ['mitmdump', '--listen-port', '8080', '--ssl-insecure', '-s', 'filter_proxy.py '],
+            ['mitmdump', '--listen-port', '8080','--ssl-insecure', '-s', 'filter_proxy.py '],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True
@@ -448,8 +448,8 @@ def edit_rule():
 
         # Actualizar en rules_by_ip si userIP está presente
         if userIPs is not None:
-            if not userIPs:
-                cursor.execute("DELETE FROM rules_by_ip WHERE blocked_website_id = %s", (blocked_website_id,))
+            #if not userIPs:
+                #cursor.execute("DELETE FROM rules_by_ip WHERE blocked_website_id = %s", (blocked_website_id,))
             # Obtener las IPs actuales de la base de datos
             cursor.execute("SELECT userIP FROM rules_by_ip WHERE blocked_website_id = %s AND action = %s", (blocked_website_id, action))
             current_ips = [row[0] for row in cursor.fetchall()]
@@ -848,7 +848,7 @@ def change_message():
     return jsonify({'success': True, 'message': 'Messages saved successfully'}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
 
 

@@ -21,8 +21,8 @@ class ProxyFilter:
         ctx.log.info("holaMITMPROXY")
         print(f"Request intercepted: {flow.request.url}")
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        #client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
-        client_ip = "192.168.68.104"
+        client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
+        #client_ip = "192.168.68.104"
         logging.info(f"Client IP: {client_ip}, {flow.client_conn}")
         #client_ip = "192.168.68.104"
         ips_with_cert = self.json_utils.load_ips()
@@ -32,7 +32,7 @@ class ProxyFilter:
             logging.info(f"Registered client IP First Connection: {client_ip}")
              # Log the certificate being loaded
             certificate = self.json_utils.load_certificates()
-            
+
             logging.info(f"Loaded certificates: {certificate}")
             flow.response = http.Response.make(
                 200,  # Código de respuesta HTTP
@@ -82,6 +82,23 @@ class ProxyFilter:
                 self.db_queries.registrar_historico( requested_url, 'bloquear', client_ip)
                 flow.metadata["blocked"] = True
                 return
+        """# Si hay IPs autorizadas pero la actual no está en la lista de autorizadas
+        # Si no hay reglas específicas para la IP, se verifica si la IP está en las reglas de `rules_by_ip`
+        authorized_ips = self.db_queries.get_authorized_ips_for_url(requested_domain)  # Obtener IPs autorizadas de la DB para esta URL
+        logging.info(f"Authorized IPs from rules_by_ip: {authorized_ips} for {requested_domain}")
+        
+        # Si hay IPs autorizadas pero la actual no está en la lista de autorizadas, se bloquea la solicitud
+        if authorized_ips and client_ip not in authorized_ips:
+            logging.info(f"Blocking request from {client_ip} as it is not authorized for {requested_domain}")
+            html_content = self.json_utils.load_html_template(block_message_data.get('message_rule'), current_time, requested_domain, client_ip)
+            flow.response = http.Response.make(
+                403,  # Código HTTP 403
+                html_content.encode(),  # HTML personalizado
+                {"Content-Type": "text/html"}
+            )
+            self.db_queries.registrar_historico(requested_url, 'bloquear', client_ip)
+            flow.metadata["blocked"] = True
+            return"""    
         # si no hay IP bloqueada revisamos roles bloqueados
         if user_role:
             blocked_sites_by_role = self.db_queries.get_role_rules(user_role,requested_domain)

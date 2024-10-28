@@ -33,6 +33,20 @@ class DatabaseQueries:
         """
         cursor.execute(query, (client_ip, requested_url))
         return cursor.fetchone()  # Devuelve una sola fila o None si no se encuentra
+    
+    def get_authorized_ips_for_url(self, requested_url):
+        self.check_connection()
+        cursor = self.db_connection.cursor(dictionary=True)
+
+        query = """
+        SELECT userIP 
+        FROM rules_by_ip rip
+        JOIN blocked_websites bw ON rip.blocked_website_id = bw.id
+        WHERE bw.url = %s AND rip.action = 'autorizar'
+        """
+        cursor.execute(query, (requested_url,))
+        authorized_ips = [row['userIP'] for row in cursor.fetchall()]
+        return authorized_ips #devolverá las IPs autorizadas para la URL solicitada
     def get_users(self):
             self.check_connection()
             cursor = self.db_connection.cursor(dictionary=True)
