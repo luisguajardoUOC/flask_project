@@ -1,3 +1,4 @@
+import datetime
 from errno import errorcode
 import http
 import logging
@@ -209,14 +210,14 @@ class DatabaseQueries:
         #cursor = self.db_connection.cursor(dictionary=True)
         try:
            #if user_role:
-            query = "INSERT INTO history ( user_id, url, action, user_rol, timestamp ) VALUES (%s, %s, %s, %s, NOW())"            
+            query = "INSERT INTO history ( user_id, url, action, user_rol, timestamp ) VALUES (%s, %s, %s, %s, NOW())"
             cursor.execute(query, (user_id, url, action, user_role))            
             #cursor.execute(query, ( user_id, url, action, user_role))
             #else:
                 #query = "INSERT INTO historial (ip, url, accion, fecha) VALUES (%s, %s, %s, NOW())"
                 #cursor.execute(query, (client_ip, url, action))
             self.db_connection.commit()
-            logging.info(f"Historial registrado: user_id={user_id},  role= {user_role}, URL={url}, Accion={action}")
+            logging.info(f"Historial registrado: user_id={user_id},  role= {user_role}, URL={url}, Accion={action} ")
             return True  # Indica que se guardó correctamente
         except mysql.connector.Error as err:
             if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:

@@ -116,9 +116,9 @@ def start_proxy():
     try:
         proxy_process = subprocess.Popen(
             ['mitmdump', '--listen-port', '8080','--ssl-insecure', '-s', 'filter_proxy.py '],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
+            #stdout=subprocess.PIPE,
+            #stderr=subprocess.PIPE,
+            #universal_newlines=True
         )
         # Crear un hilo para capturar la salida de mitmdump en tiempo real
         threading.Thread(target=stream_process_output, args=(proxy_process,), daemon=True).start()
