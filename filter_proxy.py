@@ -86,6 +86,8 @@ class ProxyFilter:
         # Verificamos que el cliente ya tiene una conexión inicializada en self.connections
         logging.info(f" ==**>>> SELF.connections: {self.connections[client_id]}")
         logging.info(f" ==**>>> Client ID FLOW: {client_id} -IP- {client_id1}")
+        connection_data = self.connections[client_id]
+        connection_data["last_activity"] = datetime.now()
         if blocked_sites_by_ip:           
 
             if blocked_sites_by_ip['action'] == 'autorizar':
@@ -93,7 +95,7 @@ class ProxyFilter:
                 # Obtener el ID del cliente para usar en self.connections
                 #client_id = id(flow.client_conn)
                 if client_id in self.connections:
-                    connection_data = self.connections[client_id]
+                    ##connection_data = self.connections[client_id]
                     logging.info(f"Conexión encontrada para IP {client_id}: {connection_data}")
                     if requested_domain not in connection_data["authorized_urls"]:
                         # Registramos la URL autorizada en la base de datos
@@ -104,7 +106,7 @@ class ProxyFilter:
                     else:
                         logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
                         # Actualizar `last_activity` para reflejar actividad reciente
-                        connection_data["last_activity"] = datetime.now()
+                        ##connection_data["last_activity"] = datetime.now()
                 else:
                     logging.warning(f"Conexión no encontrada para el cliente con IP {client_ip}")
                 return  # No bloqueamos si la URL está autorizada
@@ -122,7 +124,7 @@ class ProxyFilter:
                 )
                 logging.info(f"user_id: {user_id}, requested_domain: {requested_domain}, user_role: {user_role}")
                 if client_id in self.connections:
-                    connection_data = self.connections[client_id]
+                    ##connection_data = self.connections[client_id]
                     logging.info(f"Conexión encontrada para IP {client_id}: {connection_data}")
                     if requested_domain not in connection_data["blocked_urls"]: 
                         # Registramos la URL autorizada en la base de datos
@@ -133,7 +135,7 @@ class ProxyFilter:
                     else:
                         logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
                         # Actualizar `last_activity` para reflejar actividad reciente
-                        connection_data["last_activity"] = datetime.now()
+                        ##connection_data["last_activity"] = datetime.now()
                 else:
                     logging.warning(f"Conexión no encontrada para el cliente con IP {client_ip}")
                 flow.metadata["blocked"] = True
@@ -153,13 +155,15 @@ class ProxyFilter:
             logging.info(f"Blocked sites by role: {blocked_sites_by_role}")
             if blocked_sites_by_role:
                 if blocked_sites_by_role['action'] == 'autorizar':
-                    logging.info(f"Skipping block for authorized URL: {requested_domain} by role")
-                    #self.db_queries.historical_register( user_id, requested_domain, 'autorizar', user_role)
+                    if requested_domain not in connection_data.get("authorized_urls", set()):
+                        self.db_queries.historical_register(user_id, requested_domain, 'autorizar', user_role)
+                        connection_data["authorized_urls"].add(requested_domain)
+                        logging.info(f"Skipping block for authorized URL: {requested_domain} by role")
+                        #self.db_queries.historical_register( user_id, requested_domain, 'autorizar', user_role)
+                    else:
+                        logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
                     return  # No bloqueamos si la URL está autorizada
                 elif blocked_sites_by_role['action'] == 'bloquear':
-
-                    self.db_queries.historical_register( user_id, requested_domain, 'bloquear', user_role)
-                    logging.info(f"Blocking request from {client_ip} for {requested_domain}")
                     html_content= self.json_utils.load_html_template(block_message_data.get('message_rule'),current_time,requested_domain,client_ip)
                     flow.response = http.Response.make(
                         403,  # Código HTTP 403
@@ -167,7 +171,14 @@ class ProxyFilter:
                         #b"Access to this site is blocked by the proxy.",
                         {"Content-Type": "text/html"}
                     )
-                    flow.metadata["blocked"] = True
+                    if requested_domain not in connection_data.get("blocked_urls", set()):                    
+                        self.db_queries.historical_register( user_id, requested_domain, 'bloquear', user_role)
+                        logging.info(f"Blocking request from {client_ip} for {requested_domain}")
+                        
+                        connection_data["blocked_urls"].add(requested_domain)
+                        flow.metadata["blocked"] = True
+                    else:
+                        logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
                     return
 
 
