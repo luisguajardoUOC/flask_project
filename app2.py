@@ -806,12 +806,23 @@ def keywords():
 
 @app.route('/history', methods=['GET'])
 def history():
+    #cursor = self.db_connection.cursor(dictionary=True)
     conn = get_db_connection()
-    cursor = conn.cursor()
-
+    cursor = conn.cursor(dictionary=True)
+    history = []
     try:
-        cursor.execute("SELECT * FROM history")
-        history = cursor.fetchall()
+        results = db_queries.getHistorical()
+        # Agregar la regla a la lista
+        for row in results:
+            history.append({
+                "id": row['id'],
+                "user_id": row['user_id'],
+                "url": row['url'],
+                "action": row['action'],
+                "user_rol": row['user_rol'],
+                "userIP": row['userIP'],
+                "timestamp": row['timestamp']
+            })
         return jsonify(history), 200
     except mysql.connector.Error as err:
         return jsonify({"error": str(err)}), 500

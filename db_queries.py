@@ -229,6 +229,16 @@ class DatabaseQueries:
         finally:
             cursor.close()
 
+    def getHistorical(self):
+        self.check_connection()
+        cursor = self.db_connection.cursor(dictionary=True)
+        try:
+            query = "SELECT h.id, h.user_id, h.url, h.action, h.user_rol, u.userIP, h.timestamp FROM history h JOIN users u ON h.user_id = u.id"
+            cursor.execute(query)
+            result =  cursor.fetchall()
+        finally:
+            cursor.close()  # Cerramos el cursor para liberar recursos
+        return result
 
     def done(self):
         if self.db_connection.is_connected():
