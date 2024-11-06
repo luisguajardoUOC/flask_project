@@ -323,7 +323,7 @@ def add_rule():
             blocked_website_id = website[0]
         else:
             cursor.execute("INSERT INTO blocked_websites (url, type, reason) VALUES (%s, %s, %s)", 
-                           (url, type, reason))
+                           (url, ','.join(type), reason))
             conn.commit()
             blocked_website_id = cursor.lastrowid
 
@@ -821,7 +821,8 @@ def history():
                 "action": row['action'],
                 "user_rol": row['user_rol'],
                 "userIP": row['userIP'],
-                "timestamp": row['timestamp']
+                "timestamp": row['timestamp'],
+                "type": row['type']
             })
         return jsonify(history), 200
     except mysql.connector.Error as err:

@@ -233,8 +233,12 @@ class DatabaseQueries:
         self.check_connection()
         cursor = self.db_connection.cursor(dictionary=True)
         try:
+            query2= """SELECT h.id, h.user_id, h.url, h.action, h.user_rol, u.userIP, h.timestamp,
+                (SELECT bw.type FROM blocked_websites bw WHERE bw.url = h.url) AS type
+            FROM history h
+            JOIN users u ON h.user_id = u.id;"""
             query = "SELECT h.id, h.user_id, h.url, h.action, h.user_rol, u.userIP, h.timestamp FROM history h JOIN users u ON h.user_id = u.id"
-            cursor.execute(query)
+            cursor.execute(query2)
             result =  cursor.fetchall()
         finally:
             cursor.close()  # Cerramos el cursor para liberar recursos
