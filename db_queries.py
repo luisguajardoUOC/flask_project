@@ -229,18 +229,39 @@ class DatabaseQueries:
         finally:
             cursor.close()
 
-    def getHistorical(self):
+    #funcion para obtener histórico de los últimos 6 meses
+    def getHistorical(self, start_date, end_date):
         self.check_connection()
         cursor = self.db_connection.cursor(dictionary=True)
         try:
             query2= """SELECT h.id, h.user_id, h.url, h.action, h.user_rol, u.userIP, h.timestamp,
                 (SELECT bw.type FROM blocked_websites bw WHERE bw.url = h.url) AS type
             FROM history h
-            JOIN users u ON h.user_id = u.id;"""
-            query = "SELECT h.id, h.user_id, h.url, h.action, h.user_rol, u.userIP, h.timestamp FROM history h JOIN users u ON h.user_id = u.id"
-            cursor.execute(query2)
+            JOIN users u ON h.user_id = u.id
+            WHERE h.timestamp BETWEEN %s AND %s;"""
+            
+            cursor.execute(query2, (start_date, end_date))
             result =  cursor.fetchall()
         finally:
+            cursor.close()  # Cerramos el cursor para liberar recursos
+        return result
+    
+    #funcion para filtrar histórico por mes como parámetro
+    def getHistoricalForMonth(self, month):
+        self.check_connection()
+        cursor = self.db_connection.cursor(dictionary=True)
+        try:
+           # Filtrar por mes específico en la columna `timestamp`
+            query = """
+                SELECT h.id, h.user_id, h.url, h.action, h.user_rol, u.userIP, h.timestamp,
+                       (SELECT bw.type FROM blocked_websites bw WHERE bw.url = h.url) AS type
+                FROM history h
+                JOIN users u ON h.user_id = u.id
+                WHERE MONTH(h.timestamp) = %s
+            """
+            cursor.execute(query, (month,))
+            result =  cursor.fetchall()
+        finally:    
             cursor.close()  # Cerramos el cursor para liberar recursos
         return result
 

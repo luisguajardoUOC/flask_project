@@ -1,0 +1,7 @@
+Flask==2.2.2                    # Framework principal para el backend
+flask-cors==3.0.10              # Permite CORS para la comunicación entre frontend y backend
+mitmproxy==7.0.4                # Herramienta de proxy para interceptar y manipular tráfico HTTP/HTTPS
+mysql-connector-python==8.0.29  # Cliente para conectarse a MySQL
+pymysql==1.0.2                  # Otra opción para la conexión MySQL compatible con SQLAlchemy
+python-dotenv==0.20.0           # Manejo de variables de entorno para configuraciones seguras
+requests==2.26.0                # Para realizar solicitudes HTTP, opcional si se necesita comunicación externa
