@@ -18,151 +18,227 @@ class ProxyFilter:
         self.json_utils = json_utils()
         logging.info("Script filter_proxy.py loaded")
         print("Script filter_proxy.py loaded")
+        # Registro de conexiones para almacenar las desconexiones
         self.connections = {}
         self.authorized_urls_by_ip = {}
-        self.inactivity_threshold = inactivity_threshold
-        self.cleanup_interval = cleanup_interval
+        # Umbral de inactividad en segundos
+        self.inactivity_threshold = inactivity_threshold  # Tiempo límite de inactividad en segundos
+        self.cleanup_interval = cleanup_interval  # Intervalo para el temporizador de limpieza
+        # Iniciar el temporizador para la limpieza
         self.start_cleanup_timer()
 
     def request(self, flow: http.HTTPFlow) -> None:
-        logging.info("Request intercepted")
+        logging.info("hola")
+        ctx.log.info("holaMITMPROXY")
         print(f"Request intercepted: {flow.request.url}")
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        client_ip = flow.client_conn.address[0]
-        client_port = flow.client_conn.address[1]
+        #client_ip = flow.client_conn.address[0]  # Obtener la IP del cliente
+        client_ip = "192.168.68.103"
         user_id = self.db_queries.get_iduser_by_ip(client_ip)
-        logging.info(f"Client IP: {client_ip}, Client Port: {client_port}, User ID: {user_id}")
-
+        logging.info(f"Client IP: {client_ip},  User ID: {user_id}, Client Connection: {flow.client_conn}")
+        
         ips_with_cert = self.json_utils.load_ips()
+        logging.info(f"IPs with certificate: {ips_with_cert}")        
         if self.json_utils.is_first_connection(client_ip, ips_with_cert):
             self.json_utils.register_client_ip(client_ip)
             logging.info(f"Registered client IP First Connection: {client_ip}")
+             # Log the certificate being loaded
             certificate = self.json_utils.load_certificates()
+
+            logging.info(f"Loaded certificates: {certificate}")
             flow.response = http.Response.make(
-                200,
+                200,  # Código de respuesta HTTP
                 certificate,
                 {"Content-Disposition": "attachment; filename=mitmproxy-ca-cert.pem",
-                 "Content-Type": "application/x-x509-ca-cert"}
+                 "Content-Type": "application/x-x509-ca-cert"
+                }
             )
+            logging.info(f"Flow response status: {flow.response.status_code}, headers: {flow.response.headers}")
 
-        requested_url = flow.request.pretty_url
+        # Obtener la URL solicitada
+        requested_url = flow.request.pretty_url  # Obtener la URL solicitada
+          # Parsear la URL solicitada
         parsed_url = urlparse(requested_url)
-        requested_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        requested_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"  # Domínio con esquema
         logging.info(f"Requested domain: {requested_domain}")
-
+        #requested_domain = flow.request.host  # Obtener el dominio de la URL
+        # Registrar en el log la IP del cliente y la URL solicitada
+        logging.info(f"Received request from {client_ip} for {requested_url} ({requested_domain})")
+        # Inicializamos `visited_urls` como un conjunto si aún no está creado
+        # Guardar información de la conexión
+        #######self.connections[flow.client_conn] = (client_ip, requested_url)
+        # user_role = "student"  # Aquí se obtendría el rol del usuario de alguna manera (quizás desde la base de datos)
         user_role = self.db_queries.get_role_user(client_ip)
-        blocked_sites_by_ip = self.db_queries.get_blocked_site_by_ip(client_ip, requested_domain)
+        logging.info(f"User role: {user_role}")
+
+        # Obtener las reglas basadas en IP desde la base de datos
+        blocked_sites_by_ip = self.db_queries.get_blocked_site_by_ip(client_ip,requested_domain)
+        logging.info(f"Blocked sites by IP: {blocked_sites_by_ip}")
+        # Leer el mensaje de bloqueo personalizado del archivo JSON
         block_message_data = self.json_utils.read_block_messages()
-
-        client_id = id(client_ip)
-        connection_id = f"{client_id}-{client_port}-{requested_domain}"
-        
-        logging.info(f"Initial Request connections: {self.connections}")
+        # Verifica si la conexión ya existe
+        client_id= id(client_ip)
+        connection_id = f"{client_id}-{requested_domain}"
+        #client_id1 = id(flow.client_conn) 
+        logging.info(f" PRIMERO --> self.connections {self.connections}")
         if connection_id not in self.connections:
+            # Registra una nueva conexión si ha sido eliminada previamente            
             connection_data = self.create_connection(connection_id, client_ip, requested_domain)
-            logging.info(f"Creating new connection for client {client_ip}, ID {connection_id}")
-
-        connection_data = self.connections[connection_id]
+            logging.info(f"Creando nueva conexión para el cliente {client_ip} - {connection_data}- {connection_id}")
+            logging.info(f" ==**>>> SELF.connections: {connection_data}")
+        # Verificamos que el cliente ya tiene una conexión inicializada en self.connections        
+        logging.info(f" ==**>>> Client ID FLOW: {connection_id}")
+        #connection_data = self.connections[connection_id]
         connection_data["last_activity"] = datetime.now()
-
         if blocked_sites_by_ip:
+
             if blocked_sites_by_ip['action'] == 'autorizar':
-                if requested_domain not in connection_data["authorized_urls"]:
-                    self.db_queries.historical_register(user_id, requested_domain, 'autorizar', user_role)
-                    connection_data["authorized_urls"].add(requested_domain)
-                    logging.info(f"URL {requested_domain} registered as authorized for IP {client_ip}")
+                #self.record_activity(flow.client_conn,requested_domain)
+                # Obtener el ID del cliente para usar en self.connections
+                #connection_id = id(flow.client_conn)
+                if connection_id in self.connections:
+                    ##connection_data = self.connections[connection_id]
+                    logging.info(f"Conexión encontrada para IP {connection_id}: {connection_data}")
+                    if requested_domain not in connection_data["authorized_urls"]:
+                        # Registramos la URL autorizada en la base de datos
+                        self.db_queries.historical_register(user_id, requested_domain,'autorizar',user_role)
+                        # Agregar la URL al conjunto de URLs autorizadas
+                        connection_data["authorized_urls"].add(requested_domain)
+                        logging.info(f" !!!!!!!!!!URL {requested_domain} registrada como autorizada para IP {client_ip}")
+                    else:
+                        logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
+                        # Actualizar `last_activity` para reflejar actividad reciente
+                        ##connection_data["last_activity"] = datetime.now()
                 else:
-                    logging.info(f"URL {requested_url} already registered; avoiding duplication.")
-                return
+                    logging.warning(f"Conexión no encontrada para el cliente con IP {client_ip}")
+                return  # No bloqueamos si la URL está autorizada
+            #bloqueo si la IP está bloqueada y salimos de la función
             elif blocked_sites_by_ip['action'] == 'bloquear':
-                html_content = self.json_utils.load_html_template(block_message_data.get('message_rule'), current_time, requested_domain, client_ip)
+                logging.info(f"Blocking request from {client_ip} for {requested_domain}")
+                # Combinar el mensaje en el HTML personalizado
+                #html_content = block_message_data.get('html_content').replace('{{message}}',block_message_data.get('message_rule'))
+                html_content= self.json_utils.load_html_template(block_message_data.get('message_rule'),current_time,requested_domain,client_ip)
                 flow.response = http.Response.make(
-                    403,
-                    html_content.encode(),
+                    403,  # Código HTTP 403
+                    #b"Access to this site is blocked by the proxy.",
+                    html_content.encode(),  # HTML personalizado
                     {"Content-Type": "text/html"}
                 )
-                if requested_domain not in connection_data["blocked_urls"]:
-                    self.db_queries.historical_register(user_id, requested_domain, 'bloquear', user_role)
-                    connection_data["blocked_urls"].add(requested_domain)
-                    logging.info(f"URL {requested_domain} registered as blocked for IP {client_ip}")
+                logging.info(f"user_id: {user_id}, requested_domain: {requested_domain}, user_role: {user_role}")
+                logging.info(F"self.connections {self.connections}")
+                if connection_id in self.connections:
+                    ##connection_data = self.connections[connection_id]
+                    logging.info(f"Conexión encontrada para IP {connection_id}: {connection_data}")
+                    if requested_domain not in connection_data["blocked_urls"]: 
+                        # Registramos la URL autorizada en la base de datos
+                        self.db_queries.historical_register(user_id, requested_domain,'bloquear',user_role)
+                        # Agregar la URL al conjunto de URLs autorizadas
+                        connection_data["blocked_urls"].add(requested_domain)
+                        logging.info(f" !!!!!!!!!!URL {requested_domain} registrada como bloqueada para IP {client_ip}")
+                    else:
+                        logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
+                        # Actualizar `last_activity` para reflejar actividad reciente
+                        ##connection_data["last_activity"] = datetime.now()
                 else:
-                    logging.info(f"URL {requested_url} already registered; avoiding duplication.")
+                    logging.warning(f"Conexión no encontrada para el cliente con IP {client_ip}")
                 flow.metadata["blocked"] = True
-                return
+                return  # No bloqueamos si la URL está autorizada               
 
+        # si no hay IP bloqueada revisamos roles bloqueados
         if user_role:
-            blocked_sites_by_role = self.db_queries.get_role_rules(user_role, requested_domain)
+            blocked_sites_by_role = self.db_queries.get_role_rules(user_role,requested_domain)
+            logging.info(f"Blocked sites by role: {blocked_sites_by_role}")
             if blocked_sites_by_role:
                 if blocked_sites_by_role['action'] == 'autorizar':
-                    if requested_domain not in connection_data["authorized_urls"]:
+                    if requested_domain not in connection_data.get("authorized_urls", set()):
                         self.db_queries.historical_register(user_id, requested_domain, 'autorizar', user_role)
                         connection_data["authorized_urls"].add(requested_domain)
-                    return
+                        logging.info(f"Skipping block for authorized URL: {requested_domain} by role")
+                        #self.db_queries.historical_register( user_id, requested_domain, 'autorizar', user_role)
+                    else:
+                        logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
+                    return  # No bloqueamos si la URL está autorizada
                 elif blocked_sites_by_role['action'] == 'bloquear':
-                    html_content = self.json_utils.load_html_template(block_message_data.get('message_rule'), current_time, requested_domain, client_ip)
+                    html_content= self.json_utils.load_html_template(block_message_data.get('message_rule'),current_time,requested_domain,client_ip)
                     flow.response = http.Response.make(
-                        403,
-                        html_content.encode(),
+                        403,  # Código HTTP 403
+                        html_content.encode(),  # HTML personalizado
+                        #b"Access to this site is blocked by the proxy.",
                         {"Content-Type": "text/html"}
                     )
-                    if requested_domain not in connection_data["blocked_urls"]:
-                        self.db_queries.historical_register(user_id, requested_domain, 'bloquear', user_role)
-                        connection_data["blocked_urls"].add(requested_domain)
+                    if requested_domain not in connection_data.get("blocked_urls", set()):
+                        self.db_queries.historical_register( user_id, requested_domain, 'bloquear', user_role)
                         logging.info(f"Blocking request from {client_ip} for {requested_domain}")
-                    flow.metadata["blocked"] = True
+
+                        connection_data["blocked_urls"].add(requested_domain)
+                        flow.metadata["blocked"] = True
+                    else:
+                        logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
                     return
+
 
     def response(self, flow: http.HTTPFlow) -> None:
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        client_ip = flow.client_conn.address[0]
-        client_port = flow.client_conn.address[1]
+        client_ip = "192.168.68.103"
+        #client_ip = flow.client_conn.address[0]
         user_id = self.db_queries.get_iduser_by_ip(client_ip)
         user_role = self.db_queries.get_role_user(client_ip)
-        requested_url = flow.request.pretty_url
+        requested_url = flow.request.pretty_url  # Obtener la URL solicitada
+          # Parsear la URL solicitada
         parsed_url = urlparse(requested_url)
-        requested_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
-
+        requested_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"  # Domínio con esquema
+        # Si la solicitud fue marcada como bloqueada, no continuar
         if flow.metadata.get("blocked", False):
             logging.info(f"Skipping response for blocked request: {flow.request.pretty_url}")
-            return
+            return  # Detener si la solicitud fue bloqueada en request
 
+        # Si no existe una respuesta (puede haber sido bloqueada), salir
         if flow.response is None:
             return
 
+        # Verificar si la URL está en la lista de sitios autorizados
         if any(site in flow.request.pretty_url for site in self.db_queries.get_authorized_sites()):
             logging.info(f"Skipping response content analysis for authorized site: {flow.request.pretty_url}")
             return
-
+        # Obtener las palabras maliciosas desde la base de datos
         malicious_keywords = self.db_queries.get_malicious_keywords()
-        client_id = id(client_ip)
-        connection_id = f"{client_id}-{client_port}-{requested_domain}"
-        logging.info(f"Finally RESPONSE  connections: {self.connections}")
+        # Crear o recuperar conexión específica de este cliente y URL
+        client_id= id(client_ip)
+        connection_id = f"{client_id}-{requested_domain}"
         if connection_id not in self.connections:
             connection_data = self.create_connection(connection_id, client_ip, requested_domain)
         else:
             connection_data = self.connections[connection_id]
-
+        # Detectar palabras clave maliciosas en el contenido de la respuesta
         content = flow.response.get_text(strict=False)
         for keyword in malicious_keywords:
+             # Leer el mensaje de bloqueo personalizado del archivo JSON
             block_message_data = self.json_utils.read_block_messages()
             if keyword in content:
-                html_content = self.json_utils.load_html_template(block_message_data.get('message_word'), current_time, requested_domain, client_ip)
+                logging.info(f"Suspicious keyword '{keyword}' detected in response content: {flow.request.pretty_url}")
+                html_content= self.json_utils.load_html_template(block_message_data.get('message_word'),current_time,requested_domain,client_ip)
+
+                # Generar respuesta HTTP 403 cuando coincida con el filtro
                 flow.response = http.Response.make(
-                    403,
-                    html_content.encode(),
+                    403,  # Código de respuesta HTTP 403: Prohibido
+                   # b"Malicious content detected.",
+                    html_content.encode(),  # HTML personalizado
                     {"Content-Type": "text/html"}
                 )
                 if requested_domain not in connection_data["blocked_urls"]:
+                    # Registro en historial y actualización de URLs bloqueadas en la conexión
                     self.db_queries.historical_register(user_id, requested_domain, 'bloquear', user_role)
+                    logging.info(f"Blocking request from {client_ip} for {requested_domain}")
                     connection_data["blocked_urls"].add(requested_domain)
-                    logging.info(f"Blocking response from {client_ip} for {requested_domain}")
+                    logging.info(f"Conexión registrada para IP {client_ip} con ID {connection_id}: {connection_data}")
+                    break  # Detener análisis tras la primera coincidencia de palabra clave
                 else:
-                    logging.info(f"URL {requested_url} already registered; avoiding duplication.")               
-                break
+                    logging.info(f"URL {requested_url} ya registrada; evitando duplicación.")
+                    return
 
     def create_connection(self, connection_id, client_ip, url):
         connection_time = datetime.now()
+        
         self.connections[connection_id] = {
             "client_ip": client_ip,
             "start_time": connection_time,
@@ -170,8 +246,8 @@ class ProxyFilter:
             "authorized_urls": set(),
             "blocked_urls": set(),
         }
+         # Retornar el `connection_data` para este `connection_id`
         return self.connections[connection_id]
-
 
     """def client_connected(self, client):
         # Registra el inicio de una conexión del cliente

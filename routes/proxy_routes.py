@@ -38,11 +38,6 @@ def start_proxy():
         # Crear un hilo para capturar la salida de mitmdump en tiempo real
         threading.Thread(target=stream_process_output, args=(proxy_process,), daemon=True).start()
 
-        #for stdout_line in iter(proxy_process.stdout.readline, ""):
-        #        print(stdout_line.strip())
-        # proxy_process.stdout.close()
-        # Leer la salida completa del proxy cuando termine       
-
         return jsonify({"message": "Proxy started successfully"}), 200
     except Exception as e:
         return jsonify({"message": f"Failed to start proxy: {str(e)}"}), 500
