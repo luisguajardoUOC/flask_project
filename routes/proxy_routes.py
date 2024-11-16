@@ -26,7 +26,8 @@ def start_proxy():
     if proxy_process is not None:
         return jsonify({"message": "Proxy already running"}), 400   
    
-
+    # Configurar la variable de entorno
+    os.environ["MITMPROXY_SSLKEYLOGFILE"] = "C:\\Users\\LuisGuajardo\\.mitmproxy\\sslkeylogfile.txt"
     # Iniciar el proxy usando subprocess
     try:
         proxy_process = subprocess.Popen(
