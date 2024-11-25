@@ -142,7 +142,7 @@ class ProxyFilter:
                 else:
                     logging.warning(f"Conexión no encontrada para el cliente con IP {client_ip}")
                 flow.metadata["blocked"] = True
-                return  # No bloqueamos si la URL está autorizada               
+                return  # No bloqueamos si la URL está autorizada
 
         # si no hay IP bloqueada revisamos roles bloqueados
         if user_role:

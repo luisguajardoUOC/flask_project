@@ -31,3 +31,17 @@ def change_message():
 
     # Respuesta exitosa
     return jsonify({'success': True, 'message': 'Messages saved successfully'}), 200
+
+
+@others_bp.route('/upload_certificate', methods=['POST'])
+def upload_certificate():
+    # Cargar  el certificado del cliente
+    certificate = request.files.get('certificate')
+    if not certificate:
+        return jsonify({"error": "No se ha proporcionado un certificado"}), 400
+
+    # Guardar el certificado en el servidor
+    with open("static/assets/mitmproxy-ca-cert.pem", "wb") as f:
+        f.write(certificate.read())
+
+    return jsonify({'success': True, 'message': 'Certificate uploaded successfully'}), 200
