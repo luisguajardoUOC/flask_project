@@ -239,13 +239,13 @@ class DatabaseQueries:
             FROM history h
             JOIN users u ON h.user_id = u.id
             WHERE h.timestamp BETWEEN %s AND %s;"""
-            
+
             cursor.execute(query2, (start_date, end_date))
             result =  cursor.fetchall()
         finally:
             cursor.close()  # Cerramos el cursor para liberar recursos
         return result
-    
+
     #funcion para filtrar histórico por mes como parámetro
     def getHistoricalForMonth(self, month):
         self.check_connection()

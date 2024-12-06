@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from flask import Blueprint, jsonify
 import mysql
 from db import get_db_connection
 from db_queries import DatabaseQueries
+import logging
 
 history_bp = Blueprint('history', __name__)
 db_queries = DatabaseQueries()
@@ -11,9 +13,15 @@ db_queries = DatabaseQueries()
 def history_six_months():
     #cursor = self.db_connection.cursor(dictionary=True)
     # Calcular el rango de fechas para los últimos 6 meses
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=6*30)
-    
+    #end_date = datetime.now()
+    # start_date = end_date - timedelta(days=6*30)
+    #start_date = end_date - relativedelta(months=6)
+    # Ajustar end_date al último día del mes actual
+    end_date = datetime.now().replace(day=31, hour=23, minute=59, second=59, microsecond=999999)
+
+    # Calcular start_date como 6 meses antes
+    start_date = end_date - relativedelta(months=6)
+    logging.info(start_date)
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     history = []
