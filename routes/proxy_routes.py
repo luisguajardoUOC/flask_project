@@ -4,7 +4,8 @@ import subprocess
 import threading
 from db_queries import DatabaseQueries
 from flask import Blueprint, jsonify, request
-
+import logging
+import sys
 from json_utils import json_utils
 
 proxy_bp = Blueprint('proxy', __name__)
@@ -17,6 +18,7 @@ def stream_process_output(process):
     """Captura la salida de stdout y stderr en tiempo real y la imprime."""
     for line in process.stdout:
         print(line.strip())
+
 # Ruta para iniciar el proxy
 @proxy_bp .route('/start_proxy', methods=['GET'])
 def start_proxy():
@@ -24,21 +26,24 @@ def start_proxy():
 
     # Si el proxy ya está corriendo, no lo iniciamos de nuevo
     if proxy_process is not None:
-        return jsonify({"message": "Proxy already running"}), 400   
+        return jsonify({"message": "Proxy already running"}), 400  
+    
    
     # Configurar la variable de entorno
-    os.environ["MITMPROXY_SSLKEYLOGFILE"] = "C:\\Users\\LuisGuajardo\\.mitmproxy\\sslkeylogfile.txt"
+    #os.environ["MITMPROXY_SSLKEYLOGFILE"] = "C:\\Users\\LuisGuajardo\\.mitmproxy\\sslkeylogfile.txt"
     # Iniciar el proxy usando subprocess
     try:
+        logging.info("Starting proxy process...")
         proxy_process = subprocess.Popen(
-            ['mitmdump', '--listen-port', '8080','--ssl-insecure', '-s', 'filter_proxy.py '],
+            ['mitmdump', '--listen-host','0.0.0.0', '--listen-port', '8080','--ssl-insecure', '-s', 'filter_proxy.py'],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True
         )
         # Crear un hilo para capturar la salida de mitmdump en tiempo real
         threading.Thread(target=stream_process_output, args=(proxy_process,), daemon=True).start()
-
+        
+        logging.info("Proxy started successfully")
         return jsonify({"message": "Proxy started successfully"}), 200
     except Exception as e:
         return jsonify({"message": f"Failed to start proxy: {str(e)}"}), 500

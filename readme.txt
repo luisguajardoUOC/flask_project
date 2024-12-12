@@ -6,7 +6,7 @@ levantar entorno virtual:
 C:\Users\LuisGuajardo\Documents\mio\UOC\TfG\flask_project>.\venv\Scripts\activate
 
 
-Isntalar dependencias:
+Instalar dependencias:
 pip install Flask
 pip install flask-cors
 

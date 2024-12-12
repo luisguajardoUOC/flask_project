@@ -1,5 +1,0 @@
-[{"url": "https://campus.uoc.edu/", "category": "education","ipUser": "192.168.10.11", "reason": "access limited to students"}, 
-{"url": "https://aula.uoc.edu/", "category": "education","ipUser": "192.168.10.12", "reason": "platform for registered users only"}, 
-{"url": "https://www.uoc.edu/", "category": "public", "ipUser": "255.255.255.255","reason": "institutional website"}, 
-{"url": "https://www.alfa.es/", "category": "public","ipUser": "192.168.10.14", "reason": "institutional website"}
-]

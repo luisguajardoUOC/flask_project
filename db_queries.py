@@ -2,20 +2,25 @@ import datetime
 from errno import errorcode
 import http
 import logging
-import mysql
+
+import mysql.connector
 from mysql.connector import Error
 from db import get_db_connection 
+
 
 #logging_config.basicConfig(level=logging_config.INFO) 
 #logging_config.basicConfig(level=logging_config.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 class DatabaseQueries:
     def __init__(self):
+        self.db_connection = None
         # Conectar a la base de datos
         self.db_connection = get_db_connection()
         if not self.db_connection:
             logging.error("No se pudo conectar a la base de datos.")
         else:
             logging.info("Conexión a la base de datos establecida.")
+
+    
     def check_connection(self):
         # Verificar si la conexión está activa, si no, reconectar
         if not self.db_connection.is_connected():
@@ -195,6 +200,7 @@ class DatabaseQueries:
             """
             cursor.execute(query)
             result =  cursor.fetchall()
+        #except pymysql.MySQLError as err:
         except mysql.connector.Error as err:
             logging.error(f"Error en la consulta de roles: {err}")
             result = []  # En caso de error devolvemos una lista vacía o lo que sea apropiado
@@ -219,6 +225,7 @@ class DatabaseQueries:
             self.db_connection.commit()
             logging.info(f"Historial registrado: user_id={user_id},  role= {user_role}, URL={url}, Accion={action} ")
             return True  # Indica que se guardó correctamente
+        #except pymysql.MySQLError as err:
         except mysql.connector.Error as err:
             if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
                 logging.error("Acceso denegado a la base de datos")

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from flask import Blueprint, jsonify
-import mysql
+import mysql.connector
 from db import get_db_connection
 from db_queries import DatabaseQueries
 import logging

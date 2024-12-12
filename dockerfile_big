@@ -1,0 +1,63 @@
+# Etapa 1: Crear ruedas para las dependencias de mitmproxy
+FROM python:3.12-slim-bookworm AS wheelbuilder
+
+# Instalar dependencias del sistema necesarias
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    libssl-dev \
+    python3-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Crear directorio para las ruedas
+WORKDIR /wheels
+
+# Descargar y construir las ruedas de mitmproxy
+COPY mitmproxy-*-py3-none-any.whl /wheels/
+RUN pip install wheel && pip wheel --wheel-dir=/wheels mitmproxy
+
+# Instala net-tools para utilidades como netstat
+RUN apt update && apt install -y net-tools
+
+# Etapa 2: Configurar el entorno para el backend
+FROM python:3.12-slim-bookworm
+
+# Crear usuario no root para ejecutar el backend
+RUN useradd -mU appuser
+
+# Instalar dependencias adicionales necesarias
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nano \
+    curl \
+    gosu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Crear el directorio para mitmproxy y cambiar permisos
+RUN mkdir -p /home/appuser/.mitmproxy && chown appuser:appuser /home/appuser/.mitmproxy
+
+# Copiar las ruedas desde la etapa anterior e instalar
+COPY --from=wheelbuilder /wheels /wheels
+RUN pip install --no-index --find-links=/wheels mitmproxy
+
+# Configurar directorio de trabajo para la aplicación
+WORKDIR /app
+
+# Copiar los archivos del backend al contenedor
+COPY requirements.txt /app/requirements.txt
+COPY . /app/
+
+# Instalar las dependencias del backend
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Establecer permisos para el usuario no root
+RUN chown -R appuser:appuser /app
+
+# Cambiar al usuario no root
+USER appuser
+
+# Exponer los puertos necesarios
+EXPOSE 5000 8080
+
+# Comando para iniciar la aplicación
+CMD ["flask", "run", "--host=0.0.0.0"]

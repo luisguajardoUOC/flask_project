@@ -1,10 +1,14 @@
 from flask import Flask
 from flask_cors import CORS
 from routes import auth_bp, filter_bp, history_bp, others_bp, proxy_bp
-
+import logging
+import mysql.connector 
+#import mysql
 app = Flask(__name__)
 CORS(app)
 
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.debug("Iniciando la aplicación...")
 # Registrar blueprints
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(filter_bp, url_prefix='/api/filter')
