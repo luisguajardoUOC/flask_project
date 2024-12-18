@@ -2,7 +2,7 @@
 FROM python:3.12-slim
 
 # Actualiza e instala dependencias del sistema necesarias para algunas bibliotecas
-RUN apt update && apt install -y gcc libffi-dev libssl-dev python3-dev build-essential curl
+RUN apt update && apt install -y gcc libffi-dev libssl-dev python3-dev build-essential curl sudo psmisc
 
 # Establece el directorio de trabajo
 WORKDIR /app

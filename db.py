@@ -15,6 +15,7 @@ def get_db_connection():
             password=os.getenv("DB_PASSWORD"),
             database=os.getenv("DB_NAME")
         )
+        connection.start_transaction(isolation_level='READ COMMITTED')
         return connection
     except mysql.connector.Error as e:
         print(f"Error al conectar a la base de datos: {e}")

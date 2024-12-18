@@ -33,6 +33,8 @@ def start_proxy():
     #os.environ["MITMPROXY_SSLKEYLOGFILE"] = "C:\\Users\\LuisGuajardo\\.mitmproxy\\sslkeylogfile.txt"
     # Iniciar el proxy usando subprocess
     try:
+        # Liberar el puerto antes de iniciar el proxy
+        subprocess.run(['sudo', 'fuser', '-k', '8080/tcp'])
         logging.info("Starting proxy process...")
         proxy_process = subprocess.Popen(
             ['mitmdump', '--listen-host','0.0.0.0', '--listen-port', '8080','--ssl-insecure', '-s', 'filter_proxy.py'],

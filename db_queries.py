@@ -213,15 +213,12 @@ class DatabaseQueries:
         # Código para guardar en la base de datos        
         self.check_connection()
         cursor = self.db_connection.cursor()
-        #cursor = self.db_connection.cursor(dictionary=True)
+        
         try:
            #if user_role:
             query = "INSERT INTO history ( user_id, url, action, user_rol, timestamp ) VALUES (%s, %s, %s, %s, NOW())"
-            cursor.execute(query, (user_id, url, action, user_role))            
-            #cursor.execute(query, ( user_id, url, action, user_role))
-            #else:
-                #query = "INSERT INTO historial (ip, url, accion, fecha) VALUES (%s, %s, %s, NOW())"
-                #cursor.execute(query, (client_ip, url, action))
+            cursor.execute(query, (user_id, url, action, user_role))           
+            
             self.db_connection.commit()
             logging.info(f"Historial registrado: user_id={user_id},  role= {user_role}, URL={url}, Accion={action} ")
             return True  # Indica que se guardó correctamente
