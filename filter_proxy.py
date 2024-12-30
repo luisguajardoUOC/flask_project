@@ -99,6 +99,9 @@ class ProxyFilter:
                     if requested_domain not in connection_data["authorized_urls"]:
                         self.db_queries.historical_register(user_id, requested_domain, 'autorizar', user_role)
                         connection_data["authorized_urls"].add(requested_domain)
+                        logging.info(f"URL {requested_domain} registered as authorized for RULE {client_ip}")
+                    else:
+                        logging.info(f"URL {requested_url} already registered; avoiding duplicationRULE.")
                     return
                 elif blocked_sites_by_role['action'] == 'bloquear':
                     html_content = self.json_utils.load_html_template(block_message_data.get('message_rule'), current_time, requested_domain, client_ip)
@@ -129,10 +132,6 @@ class ProxyFilter:
             return
 
         if flow.response is None:
-            return
-
-        if any(site in flow.request.pretty_url for site in self.db_queries.get_authorized_sites()):
-            logging.info(f"Skipping response content analysis for authorized site: {flow.request.pretty_url}")
             return
 
         malicious_keywords = self.db_queries.get_malicious_keywords()

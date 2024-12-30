@@ -97,7 +97,7 @@ def add_rule():
                     "INSERT INTO rules_by_ip (action, userIP, blocked_website_id, user_id) VALUES (%s, %s, %s, %s)", 
                     (action, user_ip, blocked_website_id, user_id)
                 )
-                
+               
 
         # Paso 3: Insertar reglas en `rules_by_role` si hay roles especificados
         all_roles = ['student', 'teacher', 'public']
@@ -115,12 +115,18 @@ def add_rule():
                     FROM rules_by_role rbr
                     WHERE rbr.role = %s AND rbr.blocked_website_id = %s
                 """, (missing_role, blocked_website_id))
-                existing_auth_rule = cursor.fetchone()
-                # Si no existe una regla de autorización, se crea
-                if not existing_auth_rule:
-                    # Insertar el rol faltante como autorizado
-                    cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
-                                ('autorizar', missing_role, blocked_website_id))
+                existing_rule = cursor.fetchone()
+                # Determinar acción basada en la acción especificada para la IP
+                if action == 'autorizar':
+                    # Si no existe una regla, se crea con la acción "bloquear"
+                    if not existing_rule:
+                        cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
+                                    ('bloquear', missing_role, blocked_website_id))
+                elif action == 'bloquear':
+                    # Si no existe una regla, se crea con la acción "autorizar"
+                    if not existing_rule:
+                        cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
+                                    ('autorizar', missing_role, blocked_website_id))
 
         conn.commit()
         return jsonify({"message": "Regla añadida correctamente"}), 201
