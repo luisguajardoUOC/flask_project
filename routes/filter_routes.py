@@ -109,23 +109,15 @@ def add_rule():
                 )
                 # Para los roles que no se especificaron, se crean reglas como "autorizar" por defecto
         for missing_role in all_roles:
-            if missing_role not in roles:
-                cursor.execute("""
-                    SELECT 1 
-                    FROM rules_by_role rbr
-                    WHERE rbr.role = %s AND rbr.blocked_website_id = %s
-                """, (missing_role, blocked_website_id))
-                existing_rule = cursor.fetchone()
+            if missing_role not in roles:              
                 # Determinar acción basada en la acción especificada para la IP
                 if action == 'autorizar':
-                    # Si no existe una regla, se crea con la acción "bloquear"
-                    if not existing_rule:
-                        cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
+                    # Si no existe una regla, se crea con la acción "bloquear"                 
+                    cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
                                     ('bloquear', missing_role, blocked_website_id))
                 elif action == 'bloquear':
-                    # Si no existe una regla, se crea con la acción "autorizar"
-                    if not existing_rule:
-                        cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
+                    # Si no existe una regla, se crea con la acción "autorizar"                 
+                    cursor.execute("INSERT INTO rules_by_role (action, role, blocked_website_id) VALUES (%s, %s, %s)", 
                                     ('autorizar', missing_role, blocked_website_id))
 
         conn.commit()
